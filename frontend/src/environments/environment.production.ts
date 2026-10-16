@@ -1,4 +1,4 @@
 export const environment = {
   production: true,
-  apiUrl: 'https://REEMPLAZAR-CON-LA-URL-HTTPS-DE-TU-API/api'
+  apiUrl: 'https://mi-finanzas-uwk8.onrender.com/api'
 };

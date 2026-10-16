@@ -20,7 +20,7 @@ services:
       - key: DB_NAME
         value: mi_finanzas
       - key: DB_SSL_CA
-        value: ./tidb-ca.pem
+        sync: false
       - key: CORS_ORIGINS
         sync: false
       - key: SESSION_SECRET
