@@ -176,8 +176,42 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
   }
 });
 
+app.put('/api/auth/password', requireAuth, requireCsrfForMutation, async (req, res) => {
+  try {
+    const currentPassword = typeof req.body.currentPassword === 'string'
+      ? req.body.currentPassword
+      : '';
+    const newPassword = typeof req.body.newPassword === 'string'
+      ? req.body.newPassword
+      : '';
+
+    if (newPassword.length < 12) {
+      return res.status(400).json({ mensaje: 'La nueva contraseña debe tener al menos 12 caracteres' });
+    }
+
+    const [usuarios] = await pool.execute(
+      'SELECT password_hash FROM usuarios WHERE id = ? AND activo = TRUE LIMIT 1',
+      [req.user.id]
+    );
+
+    if (usuarios.length === 0 || !verifyPassword(currentPassword, usuarios[0].password_hash)) {
+      return res.status(401).json({ mensaje: 'La contraseña actual no es correcta' });
+    }
+
+    await pool.execute(
+      'UPDATE usuarios SET password_hash = ? WHERE id = ?',
+      [hashPassword(newPassword), req.user.id]
+    );
+
+    res.json({ mensaje: 'Contraseña actualizada correctamente' });
+  } catch (error) {
+    console.error('Error al cambiar contraseña:', error.message);
+    res.status(500).json({ mensaje: 'No se pudo cambiar la contraseña' });
+  }
+});
+
 app.use('/api/movimientos', requireAuth, requireCsrfForMutation);
-app.use('/api/categorias', requireAuth);
+app.use('/api/categorias', requireAuth, requireCsrfForMutation);
 
 app.get('/api/estado', requireAuth, async (req, res) => {
   try {
@@ -247,6 +281,103 @@ app.get('/api/categorias', async (req, res) => {
     res.status(500).json({
       mensaje: 'Error al consultar las categorias'
     });
+  }
+});
+
+app.post('/api/categorias', async (req, res) => {
+  try {
+    const nombre = typeof req.body.nombre === 'string' ? req.body.nombre.trim() : '';
+    const tipo = req.body.tipo;
+    const color = typeof req.body.color === 'string' ? req.body.color : '#64748B';
+    const icono = typeof req.body.icono === 'string' && req.body.icono.trim()
+      ? req.body.icono.trim()
+      : 'circle';
+
+    if (!nombre || nombre.length > 80 || !['INGRESO', 'GASTO'].includes(tipo) ||
+        !/^#[0-9A-Fa-f]{6}$/.test(color)) {
+      return res.status(400).json({ mensaje: 'Los datos de la categoría no son válidos' });
+    }
+
+    const [resultado] = await pool.execute(
+      `INSERT INTO categorias (usuario_id, nombre, tipo, color, icono)
+       VALUES (?, ?, ?, ?, ?)`,
+      [req.user.id, nombre, tipo, color, icono]
+    );
+
+    res.status(201).json({
+      mensaje: 'Categoría creada correctamente',
+      id: resultado.insertId
+    });
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ mensaje: 'Ya existe una categoría con ese nombre y tipo' });
+    }
+
+    console.error('Error al crear categoría:', error.message);
+    res.status(500).json({ mensaje: 'No se pudo crear la categoría' });
+  }
+});
+
+app.put('/api/categorias/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const nombre = typeof req.body.nombre === 'string' ? req.body.nombre.trim() : '';
+    const tipo = req.body.tipo;
+    const color = typeof req.body.color === 'string' ? req.body.color : '#64748B';
+    const icono = typeof req.body.icono === 'string' && req.body.icono.trim()
+      ? req.body.icono.trim()
+      : 'circle';
+
+    if (!Number.isInteger(id) || id <= 0 || !nombre || nombre.length > 80 ||
+        !['INGRESO', 'GASTO'].includes(tipo) || !/^#[0-9A-Fa-f]{6}$/.test(color)) {
+      return res.status(400).json({ mensaje: 'Los datos de la categoría no son válidos' });
+    }
+
+    const [resultado] = await pool.execute(
+      `UPDATE categorias
+       SET nombre = ?, tipo = ?, color = ?, icono = ?
+       WHERE id = ? AND usuario_id = ? AND activa = TRUE`,
+      [nombre, tipo, color, icono, id, req.user.id]
+    );
+
+    if (resultado.affectedRows === 0) {
+      return res.status(404).json({ mensaje: 'No se encontró la categoría' });
+    }
+
+    res.json({ mensaje: 'Categoría actualizada correctamente' });
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ mensaje: 'Ya existe una categoría con ese nombre y tipo' });
+    }
+
+    console.error('Error al editar categoría:', error.message);
+    res.status(500).json({ mensaje: 'No se pudo editar la categoría' });
+  }
+});
+
+app.delete('/api/categorias/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ mensaje: 'El ID de la categoría no es válido' });
+    }
+
+    const [resultado] = await pool.execute(
+      `UPDATE categorias
+       SET activa = FALSE
+       WHERE id = ? AND usuario_id = ? AND activa = TRUE`,
+      [id, req.user.id]
+    );
+
+    if (resultado.affectedRows === 0) {
+      return res.status(404).json({ mensaje: 'No se encontró la categoría' });
+    }
+
+    res.json({ mensaje: 'Categoría desactivada correctamente' });
+  } catch (error) {
+    console.error('Error al eliminar categoría:', error.message);
+    res.status(500).json({ mensaje: 'No se pudo eliminar la categoría' });
   }
 });
 

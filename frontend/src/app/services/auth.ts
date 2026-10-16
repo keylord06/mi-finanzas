@@ -63,6 +63,14 @@ export class Auth {
     );
   }
 
+  cambiarPassword(currentPassword: string, newPassword: string): Observable<{ mensaje: string }> {
+    return this.http.put<{ mensaje: string }>(
+      `${this.apiUrl}/password`,
+      { currentPassword, newPassword },
+      this.opcionesAutenticacion()
+    );
+  }
+
   cerrarSesion(): Observable<{ mensaje: string }> {
     return this.http.post<{ mensaje: string }>(
       `${this.apiUrl}/logout`,

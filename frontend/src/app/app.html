@@ -14,6 +14,10 @@
       <p class="mensaje-error" role="alert" aria-live="polite">{{ errorCarga() }}</p>
     }
 
+    @if (confirmacion()) {
+      <p class="mensaje-exito" role="status" aria-live="polite">{{ confirmacion() }}</p>
+    }
+
     @if (!cargandoCategorias() && categorias().length === 0) {
       <button class="boton-cancelar" type="button" (click)="reintentarCarga()">
         Reintentar carga de categorías
@@ -47,13 +51,69 @@
 </section>
 
     
+<section class="filtros" aria-label="Filtros de movimientos">
+  <div class="filtros-encabezado">
+    <div>
+      <p class="eyebrow">CONSULTA</p>
+      <h2>Filtrar movimientos</h2>
+    </div>
+    <button class="boton-cancelar boton-pequeno" type="button" (click)="limpiarFiltros()">
+      Limpiar
+    </button>
+  </div>
+
+  <div class="filtros-grid">
+    <label>
+      Buscar descripción
+      <input
+        type="search"
+        autocomplete="off"
+        [value]="busqueda()"
+        (input)="busqueda.set($any($event.target).value)"
+      />
+    </label>
+
+    <label>
+      Tipo
+      <select [value]="tipoFiltro()" (change)="tipoFiltro.set($any($event.target).value)">
+        <option value="TODOS">Todos</option>
+        <option value="INGRESO">Ingresos</option>
+        <option value="GASTO">Gastos</option>
+      </select>
+    </label>
+
+    <label>
+      Categoría
+      <select
+        [value]="categoriaFiltro() ?? ''"
+        (change)="actualizarCategoriaFiltro($any($event.target).value)"
+      >
+        <option value="">Todas</option>
+        @for (categoria of categorias(); track categoria.id) {
+          <option [value]="categoria.id">{{ categoria.nombre }}</option>
+        }
+      </select>
+    </label>
+
+    <label>
+      Desde
+      <input type="date" [value]="fechaDesde()" (change)="fechaDesde.set($any($event.target).value)" />
+    </label>
+
+    <label>
+      Hasta
+      <input type="date" [value]="fechaHasta()" (change)="fechaHasta.set($any($event.target).value)" />
+    </label>
+  </div>
+</section>
+
 <section class="movimientos">
   <div class="titulo-seccion">
     <h2>Movimientos recientes</h2>
-    <span>{{ movimientos().length }} registros</span>
+    <span>{{ movimientosFiltrados().length }} registros</span>
   </div>
 
-  @for (movimiento of movimientos(); track movimiento.id) {
+  @for (movimiento of movimientosFiltrados(); track movimiento.id) {
     <article class="movimiento">
       <div class="icono">
         @if (movimiento.tipo === 'ingreso') {
@@ -108,6 +168,103 @@
 >
   + Agregar movimiento
 </button>
+
+<button
+  class="boton-secundario"
+  type="button"
+  (click)="abrirGestionCategorias()"
+  [attr.aria-expanded]="mostrarGestionCategorias()"
+>
+  Administrar categorías
+</button>
+
+@if (mostrarGestionCategorias()) {
+  <section class="gestion-categorias" aria-label="Administrar categorías">
+    <div class="formulario-encabezado">
+      <div>
+        <p class="eyebrow">CONFIGURACIÓN</p>
+        <h2>Categorías</h2>
+      </div>
+      <button class="boton-cerrar" type="button" aria-label="Cerrar categorías" (click)="abrirGestionCategorias()">×</button>
+    </div>
+
+    <div class="lista-categorias">
+      @for (categoria of categorias(); track categoria.id) {
+        <article class="categoria-item">
+          <span class="muestra-color" [style.backgroundColor]="categoria.color"></span>
+          <div>
+            <strong>{{ categoria.nombre }}</strong>
+            <small>{{ categoria.tipo === 'INGRESO' ? 'Ingreso' : 'Gasto' }}</small>
+          </div>
+          <button class="boton-editar" type="button" (click)="editarCategoria(categoria.id)">Editar</button>
+          <button class="boton-cancelar" type="button" (click)="eliminarCategoria(categoria.id)">Desactivar</button>
+        </article>
+      } @empty {
+        <p class="estado-vacio">Todavía no tienes categorías activas.</p>
+      }
+    </div>
+
+    <div class="categoria-formulario">
+      <h3>{{ categoriaEditandoId() === null ? 'Nueva categoría' : 'Editar categoría' }}</h3>
+      <label>
+        Nombre
+        <input type="text" autocomplete="off" [value]="nombreCategoria()" (input)="nombreCategoria.set($any($event.target).value)" />
+      </label>
+      <label>
+        Tipo
+        <select [value]="tipoCategoria()" (change)="tipoCategoria.set($any($event.target).value)">
+          <option value="GASTO">Gasto</option>
+          <option value="INGRESO">Ingreso</option>
+        </select>
+      </label>
+      <label>
+        Color
+        <input class="selector-color" type="color" [value]="colorCategoria()" (input)="colorCategoria.set($any($event.target).value)" />
+      </label>
+      <div class="acciones-formulario">
+        <button class="boton-agregar" type="button" (click)="guardarCategoria()">Guardar categoría</button>
+        @if (categoriaEditandoId() !== null) {
+          <button class="boton-cancelar" type="button" (click)="cancelarCategoria()">Cancelar edición</button>
+        }
+      </div>
+    </div>
+  </section>
+}
+
+<button
+  class="boton-secundario"
+  type="button"
+  (click)="mostrarSeguridad.update(valor => !valor)"
+  [attr.aria-expanded]="mostrarSeguridad()"
+>
+  Seguridad de la cuenta
+</button>
+
+@if (mostrarSeguridad()) {
+  <section class="gestion-categorias seguridad" aria-label="Seguridad de la cuenta">
+    <div class="formulario-encabezado">
+      <div>
+        <p class="eyebrow">CUENTA</p>
+        <h2>Cambiar contraseña</h2>
+      </div>
+      <button class="boton-cerrar" type="button" aria-label="Cerrar seguridad" (click)="mostrarSeguridad.set(false)">×</button>
+    </div>
+
+    <label>
+      Contraseña actual
+      <input type="password" autocomplete="current-password" [value]="passwordActual()" (input)="passwordActual.set($any($event.target).value)" />
+    </label>
+    <label>
+      Nueva contraseña
+      <input type="password" autocomplete="new-password" [value]="passwordNueva()" (input)="passwordNueva.set($any($event.target).value)" />
+    </label>
+    <label>
+      Confirmar contraseña
+      <input type="password" autocomplete="new-password" [value]="passwordConfirmacion()" (input)="passwordConfirmacion.set($any($event.target).value)" />
+    </label>
+    <button class="boton-agregar" type="button" (click)="cambiarPassword()">Actualizar contraseña</button>
+  </section>
+}
 
 @if (mostrarFormulario()) {
   <section class="formulario">

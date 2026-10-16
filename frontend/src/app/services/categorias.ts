@@ -13,6 +13,13 @@ export interface Categoria {
   icono: string;
 }
 
+export interface DatosCategoria {
+  nombre: string;
+  tipo: 'INGRESO' | 'GASTO';
+  color: string;
+  icono: string;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -24,5 +31,28 @@ export class Categorias {
 
   obtenerCategorias(): Observable<Categoria[]> {
     return this.http.get<Categoria[]>(this.apiUrl, this.auth.opcionesAutenticacion());
+  }
+
+  crearCategoria(datos: DatosCategoria): Observable<{ mensaje: string; id: number }> {
+    return this.http.post<{ mensaje: string; id: number }>(
+      this.apiUrl,
+      datos,
+      this.auth.opcionesAutenticacion()
+    );
+  }
+
+  actualizarCategoria(id: number, datos: DatosCategoria): Observable<{ mensaje: string }> {
+    return this.http.put<{ mensaje: string }>(
+      `${this.apiUrl}/${id}`,
+      datos,
+      this.auth.opcionesAutenticacion()
+    );
+  }
+
+  eliminarCategoria(id: number): Observable<{ mensaje: string }> {
+    return this.http.delete<{ mensaje: string }>(
+      `${this.apiUrl}/${id}`,
+      this.auth.opcionesAutenticacion()
+    );
   }
 }

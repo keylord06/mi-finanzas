@@ -1,10 +1,10 @@
 
 import { DecimalPipe } from '@angular/common';
-import { Component, signal, inject, OnInit } from '@angular/core';
+import { Component, computed, signal, inject, OnInit } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { RouterOutlet } from '@angular/router';
 import { Movimientos, Movimiento as MovimientoAPI } from './services/movimientos';
-import { Categorias, Categoria } from './services/categorias';
+import { Categorias, Categoria, DatosCategoria } from './services/categorias';
 import { Auth } from './services/auth';
 import { AfterViewInit, ElementRef, ViewChild } from '@angular/core';
 import { Chart, registerables } from 'chart.js';
@@ -20,6 +20,8 @@ interface Movimiento {
   monto: number;
   fecha: string;
 }
+
+type FiltroTipo = 'TODOS' | 'INGRESO' | 'GASTO';
 
 @Component({
   imports: [RouterOutlet, DecimalPipe],
@@ -46,6 +48,45 @@ export class App implements OnInit, AfterViewInit {
   protected readonly ingresos = signal(0);
   protected readonly gastos = signal(0);
   protected readonly movimientos = signal<Movimiento[]>([]);
+  protected readonly busqueda = signal('');
+  protected readonly tipoFiltro = signal<FiltroTipo>('TODOS');
+  protected readonly categoriaFiltro = signal<number | null>(null);
+  protected readonly fechaDesde = signal('');
+  protected readonly fechaHasta = signal('');
+  protected readonly confirmacion = signal('');
+  protected readonly mostrarGestionCategorias = signal(false);
+  protected readonly categoriaEditandoId = signal<number | null>(null);
+  protected readonly nombreCategoria = signal('');
+  protected readonly tipoCategoria = signal<'INGRESO' | 'GASTO'>('GASTO');
+  protected readonly colorCategoria = signal('#64748B');
+  protected readonly iconoCategoria = signal('circle');
+  protected readonly mostrarSeguridad = signal(false);
+  protected readonly passwordActual = signal('');
+  protected readonly passwordNueva = signal('');
+  protected readonly passwordConfirmacion = signal('');
+
+  protected readonly movimientosFiltrados = computed(() => {
+    const termino = this.busqueda().trim().toLocaleLowerCase();
+    const tipo = this.tipoFiltro();
+    const categoria = this.categoriaFiltro();
+    const desde = this.fechaDesde();
+    const hasta = this.fechaHasta();
+
+    return this.movimientos().filter(movimiento => {
+      const coincideTexto = !termino ||
+        movimiento.descripcion.toLocaleLowerCase().includes(termino);
+      const coincideTipo = tipo === 'TODOS' ||
+        movimiento.tipo === tipo.toLocaleLowerCase();
+      const coincideCategoria = categoria === null ||
+        movimiento.categoria_id === categoria;
+      const fecha = movimiento.fecha.slice(0, 10);
+      const coincideDesde = !desde || fecha >= desde;
+      const coincideHasta = !hasta || fecha <= hasta;
+
+      return coincideTexto && coincideTipo && coincideCategoria &&
+        coincideDesde && coincideHasta;
+    });
+  });
 
   @ViewChild('graficoFinanzas')
 graficoFinanzas!: ElementRef<HTMLCanvasElement>;
@@ -156,6 +197,116 @@ private actualizarGrafico(): void {
     this.mostrarFormulario.set(true);
   }
 
+  protected abrirGestionCategorias(): void {
+    this.mostrarGestionCategorias.update(valor => !valor);
+    this.cancelarCategoria();
+  }
+
+  protected editarCategoria(id: number): void {
+    const categoria = this.categorias().find(item => item.id === id);
+
+    if (!categoria) {
+      return;
+    }
+
+    this.categoriaEditandoId.set(id);
+    this.nombreCategoria.set(categoria.nombre);
+    this.tipoCategoria.set(categoria.tipo);
+    this.colorCategoria.set(categoria.color);
+    this.iconoCategoria.set(categoria.icono);
+  }
+
+  protected cancelarCategoria(): void {
+    this.categoriaEditandoId.set(null);
+    this.nombreCategoria.set('');
+    this.tipoCategoria.set('GASTO');
+    this.colorCategoria.set('#64748B');
+    this.iconoCategoria.set('circle');
+  }
+
+  protected guardarCategoria(): void {
+    const datos: DatosCategoria = {
+      nombre: this.nombreCategoria().trim(),
+      tipo: this.tipoCategoria(),
+      color: this.colorCategoria(),
+      icono: this.iconoCategoria().trim() || 'circle'
+    };
+
+    if (!datos.nombre || !/^#[0-9A-Fa-f]{6}$/.test(datos.color)) {
+      this.errorCarga.set('Escribe un nombre y selecciona un color válido.');
+      return;
+    }
+
+    const id = this.categoriaEditandoId();
+    const operacion = id === null
+      ? this.servicioCategorias.crearCategoria(datos)
+      : this.servicioCategorias.actualizarCategoria(id, datos);
+
+    operacion.subscribe({
+      next: () => {
+        this.cancelarCategoria();
+        this.cargarCategorias();
+        this.mostrarConfirmacion(
+          id === null ? 'Categoría creada correctamente.' : 'Categoría actualizada correctamente.'
+        );
+      },
+      error: (error: HttpErrorResponse) => {
+        this.errorCarga.set(
+          typeof error.error?.mensaje === 'string'
+            ? error.error.mensaje
+            : 'No se pudo guardar la categoría.'
+        );
+      }
+    });
+  }
+
+  protected eliminarCategoria(id: number): void {
+    if (!confirm('¿Desactivar esta categoría? Los movimientos históricos se conservarán.')) {
+      return;
+    }
+
+    this.servicioCategorias.eliminarCategoria(id).subscribe({
+      next: () => {
+        this.cargarCategorias();
+        this.mostrarConfirmacion('Categoría desactivada correctamente.');
+      },
+      error: (error: HttpErrorResponse) => {
+        this.errorCarga.set(
+          typeof error.error?.mensaje === 'string'
+            ? error.error.mensaje
+            : 'No se pudo desactivar la categoría.'
+        );
+      }
+    });
+  }
+
+  protected cambiarPassword(): void {
+    const actual = this.passwordActual();
+    const nueva = this.passwordNueva();
+
+    if (nueva.length < 12 || nueva !== this.passwordConfirmacion()) {
+      this.errorCarga.set('La nueva contraseña debe tener 12 caracteres y coincidir en ambos campos.');
+      return;
+    }
+
+    this.auth.cambiarPassword(actual, nueva).subscribe({
+      next: () => {
+        this.passwordActual.set('');
+        this.passwordNueva.set('');
+        this.passwordConfirmacion.set('');
+        this.mostrarConfirmacion('Contraseña actualizada.');
+        this.mostrarSeguridad.set(false);
+      },
+      error: (error: HttpErrorResponse) => {
+        this.errorCarga.set(
+          typeof error.error?.mensaje === 'string'
+            ? error.error.mensaje
+            : 'No se pudo cambiar la contraseña.'
+        );
+      }
+    });
+  }
+
   
 protected editarMovimiento(id: number): void {
   const movimiento = this.movimientos().find(
@@ -182,6 +333,18 @@ private cargarDatos(): void {
   protected reintentarCarga(): void {
     this.errorCarga.set('');
     this.cargarDatos();
+  }
+
+  protected limpiarFiltros(): void {
+    this.busqueda.set('');
+    this.tipoFiltro.set('TODOS');
+    this.categoriaFiltro.set(null);
+    this.fechaDesde.set('');
+    this.fechaHasta.set('');
+  }
+
+  protected actualizarCategoriaFiltro(valor: string): void {
+    this.categoriaFiltro.set(valor === '' ? null : Number(valor));
   }
 
 protected iniciarSesion(): void {
@@ -270,7 +433,7 @@ protected guardarMovimiento(): void {
           descripcion: concepto,
           tipo,
           monto: montoIngresado,
-          fecha: new Date().toLocaleDateString('es-CR')
+          fecha: new Date().toISOString().slice(0, 10)
         };
 
         this.movimientos.update(lista => [
@@ -311,6 +474,9 @@ protected guardarMovimiento(): void {
       this.movimientoEditandoId.set(null);
       this.errorCarga.set('');
       this.mostrarFormulario.set(false);
+      this.mostrarConfirmacion(
+        id === null ? 'Movimiento guardado correctamente.' : 'Movimiento actualizado correctamente.'
+      );
     },
     error: (error) => {
       console.error('Error al guardar el movimiento:', error);
@@ -354,6 +520,7 @@ protected eliminarMovimiento(id: number): void {
           total => total - movimientoEliminado.monto
         );
       }
+      this.mostrarConfirmacion('Movimiento eliminado correctamente.');
     },
     error: (error) => {
       console.error('Error al eliminar movimiento:', error);
@@ -361,6 +528,11 @@ protected eliminarMovimiento(id: number): void {
     }
   });
 }
+
+  private mostrarConfirmacion(mensaje: string): void {
+    this.confirmacion.set(mensaje);
+    setTimeout(() => this.confirmacion.set(''), 3500);
+  }
 
 
 private cargarCategorias(): void {
