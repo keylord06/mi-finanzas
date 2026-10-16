@@ -1,6 +1,7 @@
 
 import { DecimalPipe } from '@angular/common';
 import { Component, signal, inject, OnInit } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
 import { RouterOutlet } from '@angular/router';
 import { Movimientos, Movimiento as MovimientoAPI } from './services/movimientos';
 import { Categorias, Categoria } from './services/categorias';
@@ -191,8 +192,12 @@ protected iniciarSesion(): void {
       this.errorSesion.set('');
       this.cargarDatos();
     },
-    error: () => {
-      this.errorSesion.set('Correo o contraseña incorrectos.');
+    error: (error: HttpErrorResponse) => {
+      this.errorSesion.set(
+        typeof error.error?.mensaje === 'string'
+          ? error.error.mensaje
+          : 'Correo o contraseña incorrectos.'
+      );
     }
   });
 }
