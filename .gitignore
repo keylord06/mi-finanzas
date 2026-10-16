@@ -1,0 +1,13 @@
+# Secretos y configuración local
+.env
+.env.*
+!.env.example
+
+# Respaldos y certificados de la base de datos
+*.sql
+*.pem
+
+# Dependencias y salidas de compilación
+node_modules/
+dist/
+.angular/
