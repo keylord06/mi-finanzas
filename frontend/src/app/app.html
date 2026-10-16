@@ -103,6 +103,10 @@
   <section class="formulario">
     <h2>Nuevo movimiento</h2>
 
+    @if (errorCarga()) {
+      <p class="mensaje-error" role="alert">{{ errorCarga() }}</p>
+    }
+
     <label for="tipo">Tipo de movimiento</label>
     <select
       id="tipo"
