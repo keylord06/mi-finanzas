@@ -222,7 +222,8 @@ h1 {
 .filtros-grid {
   display: grid;
   grid-template-columns: 2fr repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  column-gap: 18px;
+  row-gap: 16px;
 }
 
 .filtros-grid label {
@@ -354,7 +355,10 @@ h1 {
 }
 
 .boton-seccion {
+  display: block;
+  width: 100%;
   margin-top: 12px;
+  text-align: left;
 }
 
 .acciones-panel {
@@ -583,6 +587,47 @@ h1 {
   margin: 0 auto;
 }
 
+.seguridad {
+  max-width: 460px;
+}
+
+.seguridad .formulario-encabezado {
+  padding-bottom: 4px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.seguridad label {
+  display: grid;
+  gap: 7px;
+  color: #334155;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.seguridad input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 50px;
+  padding: 12px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #172033;
+  font-size: 16px;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.seguridad input:focus {
+  border-color: #176b50;
+  background: white;
+  box-shadow: 0 0 0 3px #176b5020;
+  outline: 0;
+}
+
+.seguridad .boton-agregar {
+  margin-top: 4px;
+}
+
 @media (max-width: 480px) {
   .dashboard {
     padding: 20px 14px;
@@ -613,29 +658,10 @@ h1 {
     gap: 8px;
   }
 
-  .detalle {
-    flex: 1 1 calc(100% - 56px);
-  }
-
-  .movimiento strong {
-    margin-left: 56px;
-    font-size: 12px;
-  }
-
-  .boton-editar,
-  .movimiento .boton-cancelar {
-    flex: 1 1 0;
-  }
-
-  .formulario,
-  .seccion-graficos,
-  .filtros,
-  .gestion-categorias {
-    padding: 18px;
-  }
-
   .filtros-grid {
     grid-template-columns: 1fr 1fr;
+    column-gap: 14px;
+    row-gap: 18px;
   }
 
   .filtros-grid label:first-child {
