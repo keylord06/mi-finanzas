@@ -309,9 +309,8 @@ h1 {
 }
 
 .boton-secundario {
-  width: 100%;
+  flex: 1;
   min-height: 44px;
-  margin-top: 12px;
   padding: 10px 14px;
   border: 1px solid #b7d7cb;
   border-radius: 12px;
@@ -319,6 +318,12 @@ h1 {
   color: #176b50;
   font-weight: bold;
   cursor: pointer;
+}
+
+.acciones-panel {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
 }
 
 .boton-agregar:active,
@@ -337,6 +342,24 @@ h1 {
   background: white;
   border: 1px solid #dbe5e2;
   box-shadow: 0 14px 30px #17203312;
+}
+
+.modal-backdrop {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: #0f172a99;
+  overflow-y: auto;
+}
+
+.modal-panel {
+  width: min(100%, 620px);
+  max-height: min(720px, calc(100vh - 40px));
+  margin: auto;
+  overflow-y: auto;
 }
 
 .formulario-encabezado {
@@ -601,6 +624,20 @@ h1 {
 
   .acciones-formulario {
     flex-direction: column;
+  }
+
+  .acciones-panel {
+    flex-direction: column;
+  }
+
+  .modal-backdrop {
+    align-items: end;
+    padding: 10px;
+  }
+
+  .modal-panel {
+    max-height: calc(100vh - 20px);
+    border-radius: 20px 20px 12px 12px;
   }
 
   .titulo-seccion h2 {
