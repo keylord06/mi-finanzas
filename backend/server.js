@@ -67,7 +67,11 @@ function cookieOptions(httpOnly) {
 function requireAuth(req, res, next) {
   try {
     const cookies = parseCookies(req.headers.cookie);
-    const user = verifySessionToken(cookies[SESSION_COOKIE]);
+    const authorization = req.get('Authorization') || '';
+    const token = authorization.startsWith('Bearer ')
+      ? authorization.slice(7)
+      : cookies[SESSION_COOKIE];
+    const user = verifySessionToken(token);
 
     if (!user) {
       return res.status(401).json({ mensaje: 'Debes iniciar sesión' });
@@ -83,6 +87,10 @@ function requireAuth(req, res, next) {
 
 function requireCsrfForMutation(req, res, next) {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    return next();
+  }
+
+  if ((req.get('Authorization') || '').startsWith('Bearer ')) {
     return next();
   }
 
@@ -133,7 +141,8 @@ app.post('/api/auth/login', limitadorLogin, async (req, res) => {
         nombre: usuario.nombre,
         correo: usuario.correo
       },
-      csrfToken
+      csrfToken,
+      sessionToken: createSessionToken(usuario.id)
     });
   } catch (error) {
     console.error('Error al iniciar sesión:', error.message);

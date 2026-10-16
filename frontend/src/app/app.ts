@@ -71,6 +71,7 @@ private grafico: Chart | null = null;
       },
       error: () => {
         sessionStorage.removeItem('mi_finanzas_csrf');
+        sessionStorage.removeItem('mi_finanzas_session_token');
         this.autenticado.set(false);
       }
     });

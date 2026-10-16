@@ -1,9 +1,9 @@
 
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
+import { Auth } from './auth';
 
 export interface Movimiento {
   id: number;
@@ -27,27 +27,19 @@ export interface NuevoMovimiento {
 })
 export class Movimientos {
   private http = inject(HttpClient);
+  private auth = inject(Auth);
 
   private apiUrl = `${environment.apiUrl}/movimientos`;
 
-  private opcionesMutacion(): { withCredentials: true; headers?: HttpHeaders } {
-    const token = sessionStorage.getItem('mi_finanzas_csrf');
-
-    return {
-      withCredentials: true,
-      headers: token ? new HttpHeaders({ 'X-CSRF-Token': token }) : undefined
-    };
-  }
-
   obtenerMovimientos(): Observable<Movimiento[]> {
-    return this.http.get<Movimiento[]>(this.apiUrl, { withCredentials: true });
+    return this.http.get<Movimiento[]>(this.apiUrl, this.auth.opcionesAutenticacion());
   }
 
   crearMovimiento(datos: NuevoMovimiento): Observable<{ mensaje: string; id: number }> {
     return this.http.post<{ mensaje: string; id: number }>(
       this.apiUrl,
       datos,
-      this.opcionesMutacion()
+      this.auth.opcionesAutenticacion()
     );
   }
 
@@ -55,7 +47,7 @@ export class Movimientos {
   eliminarMovimiento(id: number): Observable<{ mensaje: string }> {
     return this.http.delete<{ mensaje: string }>(
       `${this.apiUrl}/${id}`,
-      this.opcionesMutacion()
+      this.auth.opcionesAutenticacion()
     );
   }
 
@@ -67,7 +59,7 @@ export class Movimientos {
     return this.http.put<{ mensaje: string }>(
       `${this.apiUrl}/${id}`,
       datos,
-      this.opcionesMutacion()
+      this.auth.opcionesAutenticacion()
     );
   }
 
