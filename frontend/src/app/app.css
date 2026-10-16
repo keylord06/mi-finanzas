@@ -630,14 +630,9 @@ h1 {
     flex-direction: column;
   }
 
-  .modal-backdrop {
-    align-items: end;
-    padding: 10px;
-  }
-
   .modal-panel {
-    max-height: calc(100vh - 20px);
-    border-radius: 20px 20px 12px 12px;
+    max-height: calc(100vh - 32px);
+    border-radius: 16px;
   }
 
   .titulo-seccion h2 {
