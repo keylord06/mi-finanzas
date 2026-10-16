@@ -14,6 +14,12 @@
       <p class="mensaje-error" role="alert">{{ errorCarga() }}</p>
     }
 
+    @if (!cargandoCategorias() && categorias().length === 0) {
+      <button class="boton-cancelar" type="button" (click)="reintentarCarga()">
+        Reintentar carga de categorías
+      </button>
+    }
+
     <section class="tarjeta-principal">
       <p>Balance disponible</p>
       <h2>₡{{ balance() | number:'1.2-2'}}</h2>
@@ -125,6 +131,7 @@
 <label for="categoria">Categoría</label>
 <select
   id="categoria"
+  [disabled]="cargandoCategorias() || categorias().length === 0"
   [value]="categoriaSeleccionada() ?? ''"
   (change)="actualizarCategoria($any($event.target).value)"
 >

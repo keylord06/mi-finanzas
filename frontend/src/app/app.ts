@@ -8,6 +8,7 @@ import { Categorias, Categoria } from './services/categorias';
 import { Auth } from './services/auth';
 import { AfterViewInit, ElementRef, ViewChild } from '@angular/core';
 import { Chart, registerables } from 'chart.js';
+import { finalize, retry } from 'rxjs';
 
 Chart.register(...registerables);
 
@@ -39,6 +40,7 @@ export class App implements OnInit, AfterViewInit {
   protected readonly errorSesion = signal('');
 
   protected readonly categorias = signal<Categoria[]>([]);
+  protected readonly cargandoCategorias = signal(false);
   protected readonly categoriaSeleccionada = signal<number | null>(null);
 
   protected readonly ingresos = signal(0);
@@ -175,6 +177,11 @@ private cargarDatos(): void {
   this.cargarMovimientos();
   this.cargarCategorias();
 }
+
+  protected reintentarCarga(): void {
+    this.errorCarga.set('');
+    this.cargarDatos();
+  }
 
 protected iniciarSesion(): void {
   const correo = this.correo().trim();
@@ -356,13 +363,24 @@ protected eliminarMovimiento(id: number): void {
 
 
 private cargarCategorias(): void {
-  this.servicioCategorias.obtenerCategorias().subscribe({
+  this.cargandoCategorias.set(true);
+
+  this.servicioCategorias.obtenerCategorias()
+    .pipe(
+      retry({ count: 2, delay: 1000 }),
+      finalize(() => this.cargandoCategorias.set(false))
+    )
+    .subscribe({
     next: (datos: Categoria[]) => {
       this.categorias.set(datos);
     },
-    error: (error) => {
+    error: (error: HttpErrorResponse) => {
       console.error('Error al cargar categorias:', error);
-      this.errorCarga.set('No se pudieron cargar las categorias.');
+      this.errorCarga.set(
+        error.status === 401
+          ? 'La sesión expiró. Cierra sesión y vuelve a entrar.'
+          : 'No se pudieron cargar las categorías. Pulsa Reintentar.'
+      );
     }
   });
 }
