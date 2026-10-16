@@ -88,6 +88,10 @@ select:focus-visible {
   margin-bottom: 28px;
 }
 
+.cuenta {
+  position: relative;
+}
+
 .subtitulo {
   color: #64748b;
   font-size: 12px;
@@ -304,6 +308,35 @@ h1 {
   cursor: pointer;
 }
 
+.menu-cuenta {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 10px);
+  right: 0;
+  display: grid;
+  width: 220px;
+  padding: 8px;
+  border: 1px solid #dbe5e2;
+  border-radius: 14px;
+  background: white;
+  box-shadow: 0 14px 30px #1720331c;
+}
+
+.menu-cuenta button {
+  padding: 12px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #172033;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu-cuenta button:hover {
+  background: #ecf8f3;
+  color: #176b50;
+}
+
 .boton-agregar:hover {
   background: #12543f;
 }
@@ -318,6 +351,10 @@ h1 {
   color: #176b50;
   font-weight: bold;
   cursor: pointer;
+}
+
+.boton-seccion {
+  margin-top: 12px;
 }
 
 .acciones-panel {

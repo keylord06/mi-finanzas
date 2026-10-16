@@ -61,6 +61,9 @@ export class App implements OnInit, AfterViewInit {
   protected readonly colorCategoria = signal('#64748B');
   protected readonly iconoCategoria = signal('circle');
   protected readonly mostrarSeguridad = signal(false);
+  protected readonly mostrarMenuCuenta = signal(false);
+  protected readonly mostrarFiltros = signal(false);
+  protected readonly mostrarResumenGrafico = signal(false);
   protected readonly passwordActual = signal('');
   protected readonly passwordNueva = signal('');
   protected readonly passwordConfirmacion = signal('');
@@ -195,6 +198,18 @@ private actualizarGrafico(): void {
 
   protected abrirFormulario(): void {
     this.mostrarFormulario.set(true);
+  }
+
+  protected alternarResumenGrafico(): void {
+    if (this.mostrarResumenGrafico()) {
+      this.grafico?.destroy();
+      this.grafico = null;
+      this.mostrarResumenGrafico.set(false);
+      return;
+    }
+
+    this.mostrarResumenGrafico.set(true);
+    setTimeout(() => this.actualizarGrafico());
   }
 
   protected abrirGestionCategorias(): void {
