@@ -11,7 +11,7 @@
 
   <main>
     @if (errorCarga()) {
-      <p class="mensaje-error" role="alert">{{ errorCarga() }}</p>
+      <p class="mensaje-error" role="alert" aria-live="polite">{{ errorCarga() }}</p>
     }
 
     @if (!cargandoCategorias() && categorias().length === 0) {
@@ -97,7 +97,7 @@
 
     </article>
   } @empty {
-    <p>Aún no tienes movimientos registrados.</p>
+    <p class="estado-vacio">Aún no tienes movimientos registrados.</p>
   }
 </section>
 
@@ -111,10 +111,23 @@
 
 @if (mostrarFormulario()) {
   <section class="formulario">
-    <h2>Nuevo movimiento</h2>
+    <div class="formulario-encabezado">
+      <div>
+        <p class="eyebrow">REGISTRO</p>
+        <h2>{{ movimientoEditandoId() !== null ? 'Editar movimiento' : 'Nuevo movimiento' }}</h2>
+      </div>
+      <button
+        class="boton-cerrar"
+        type="button"
+        aria-label="Cerrar formulario"
+        (click)="mostrarFormulario.set(false)"
+      >
+        ×
+      </button>
+    </div>
 
     @if (errorCarga()) {
-      <p class="mensaje-error" role="alert">{{ errorCarga() }}</p>
+      <p class="mensaje-error" role="alert" aria-live="polite">{{ errorCarga() }}</p>
     }
 
     <label for="tipo">Tipo de movimiento</label>
@@ -137,6 +150,12 @@
 >
   <option value="">Selecciona una categoría</option>
 
+  @if (cargandoCategorias()) {
+    <option value="" disabled>Cargando categorías...</option>
+  } @else if (categorias().length === 0) {
+    <option value="" disabled>No hay categorías disponibles</option>
+  }
+
   @for (categoria of categorias(); track categoria.id) {
     @if (
       (tipoMovimiento() === 'ingreso' && categoria.tipo === 'INGRESO') ||
@@ -153,7 +172,8 @@
 <input
   id="descripcion"
   type="text"
-  placeholder="Ej. Alimentación"
+  autocomplete="off"
+  required
   [value]="descripcion()"
   (input)="descripcion.set($any($event.target).value)"
 />
@@ -165,7 +185,9 @@
       type="number"
       min="0.01"
       step="0.01"
-      placeholder="Ej. 3500"
+      inputmode="decimal"
+      autocomplete="off"
+      required
       [value]="monto() ?? ''"
       (input)="actualizarMonto($any($event.target).value)"
     />
