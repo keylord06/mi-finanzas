@@ -61,11 +61,17 @@ private grafico: Chart | null = null;
   protected readonly errorCarga = signal('');
 
   ngOnInit(): void {
-    if (sessionStorage.getItem('mi_finanzas_csrf')) {
-      this.autenticado.set(true);
-      this.cargarDatos();
-    }
-}
+    this.auth.comprobarSesion().subscribe({
+      next: () => {
+        this.autenticado.set(true);
+        this.cargarDatos();
+      },
+      error: () => {
+        sessionStorage.removeItem('mi_finanzas_csrf');
+        this.autenticado.set(false);
+      }
+    });
+  }
 
 ngAfterViewInit(): void {
   this.actualizarGrafico();

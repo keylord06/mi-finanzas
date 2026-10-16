@@ -216,33 +216,6 @@ h1 {
   background: #12543f;
 }
 
-@media (max-width: 480px) {
-  .dashboard {
-    padding: 20px 14px;
-  }
-
-  .tarjeta-principal {
-    padding: 22px;
-  }
-
-  .resumen {
-    gap: 10px;
-  }
-
-  .tarjeta {
-    padding: 14px;
-  }
-
-  .movimiento {
-    gap: 8px;
-  }
-
-  .movimiento strong {
-    font-size: 12px;
-  }
-}
-
-
 .formulario {
   display: flex;
   flex-direction: column;
@@ -268,41 +241,45 @@ h1 {
 .formulario select {
   width: 100%;
   box-sizing: border-box;
+  min-height: 48px;
   padding: 12px;
   border: 1px solid #cbd5e1;
   border-radius: 10px;
   background: white;
   color: #172033;
   font: inherit;
+  font-size: 16px;
+}
+
+.boton-cancelar,
+.boton-editar {
+  min-height: 44px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  cursor: pointer;
 }
 
 .boton-cancelar {
-  padding: 14px;
   border: 1px solid #cbd5e1;
-  border-radius: 12px;
   background: white;
   color: #172033;
   font-size: 15px;
-  cursor: pointer;
 }
-
 
 .boton-editar {
   width: auto;
-  padding: 8px 14px;
+  border: 0;
+  background: #e2e8f0;
+  color: #172033;
   font-size: 14px;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
 }
-
 
 .seccion-graficos {
   margin-top: 30px;
   padding: 24px;
-  background: white;
   border-radius: 16px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  background: white;
+  box-shadow: 0 4px 12px #00000014;
 }
 
 .seccion-graficos h2 {
@@ -316,5 +293,55 @@ h1 {
   width: 100%;
   max-width: 700px;
   margin: 0 auto;
+}
+
+@media (max-width: 480px) {
+  .dashboard {
+    padding: 20px 14px;
+  }
+
+  .pantalla-login {
+    padding: 16px;
+  }
+
+  .login-panel {
+    padding: 22px 18px;
+  }
+
+  .tarjeta-principal {
+    padding: 22px;
+  }
+
+  .resumen {
+    gap: 10px;
+  }
+
+  .tarjeta {
+    padding: 14px;
+  }
+
+  .movimiento {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .detalle {
+    flex: 1 1 calc(100% - 56px);
+  }
+
+  .movimiento strong {
+    margin-left: 56px;
+    font-size: 12px;
+  }
+
+  .boton-editar,
+  .movimiento .boton-cancelar {
+    flex: 1 1 0;
+  }
+
+  .formulario,
+  .seccion-graficos {
+    padding: 18px;
+  }
 }
 

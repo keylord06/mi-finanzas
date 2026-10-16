@@ -33,6 +33,15 @@ export class Auth {
     );
   }
 
+  comprobarSesion(): Observable<{ usuario: Usuario }> {
+    return this.http.get<{ usuario: Usuario }>(
+      `${this.apiUrl}/me`,
+      { withCredentials: true }
+    ).pipe(
+      tap(respuesta => this.usuario.set(respuesta.usuario))
+    );
+  }
+
   cerrarSesion(): Observable<{ mensaje: string }> {
     return this.http.post<{ mensaje: string }>(
       `${this.apiUrl}/logout`,
