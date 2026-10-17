@@ -1,6 +1,6 @@
 
-import { DecimalPipe } from '@angular/common';
-import { Component, computed, signal, inject, OnInit } from '@angular/core';
+import { CurrencyPipe, DatePipe } from '@angular/common';
+import { Component, computed, effect, signal, inject, OnInit } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { RouterOutlet } from '@angular/router';
 import { Movimientos, Movimiento as MovimientoAPI } from './services/movimientos';
@@ -19,12 +19,19 @@ interface Movimiento {
   tipo: 'ingreso' | 'gasto';
   monto: number;
   fecha: string;
+  fechaOrden: number;
 }
 
 type FiltroTipo = 'TODOS' | 'INGRESO' | 'GASTO';
 
+function normalizarFecha(fecha: string): string {
+  const valor = fecha.trim().replace(' ', 'T');
+
+  return /(?:Z|[+-]\d{2}:?\d{2})$/.test(valor) ? valor : `${valor}Z`;
+}
+
 @Component({
-  imports: [RouterOutlet, DecimalPipe],
+  imports: [RouterOutlet, CurrencyPipe, DatePipe],
   selector: 'app-root',
   styleUrl: './app.css',
   templateUrl: './app.html',
@@ -45,8 +52,6 @@ export class App implements OnInit, AfterViewInit {
   protected readonly cargandoCategorias = signal(false);
   protected readonly categoriaSeleccionada = signal<number | null>(null);
 
-  protected readonly ingresos = signal(0);
-  protected readonly gastos = signal(0);
   protected readonly movimientos = signal<Movimiento[]>([]);
   protected readonly busqueda = signal('');
   protected readonly tipoFiltro = signal<FiltroTipo>('TODOS');
@@ -91,14 +96,35 @@ export class App implements OnInit, AfterViewInit {
     });
   });
 
+  protected readonly ingresosFiltrados = computed(() =>
+    this.movimientosFiltrados()
+      .filter(movimiento => movimiento.tipo === 'ingreso')
+      .reduce((total, movimiento) => total + movimiento.monto, 0)
+  );
+
+  protected readonly gastosFiltrados = computed(() =>
+    this.movimientosFiltrados()
+      .filter(movimiento => movimiento.tipo === 'gasto')
+      .reduce((total, movimiento) => total + movimiento.monto, 0)
+  );
+
+  protected readonly balance = computed(() =>
+    this.ingresosFiltrados() - this.gastosFiltrados()
+  );
+
   @ViewChild('graficoFinanzas')
 graficoFinanzas!: ElementRef<HTMLCanvasElement>;
 
 private grafico: Chart | null = null;
 
-  protected readonly balance = () => {
-    return this.ingresos() - this.gastos();
-  };
+  private readonly sincronizarGrafico = effect(() => {
+    const datos = [this.ingresosFiltrados(), this.gastosFiltrados()];
+
+    if (this.grafico) {
+      this.grafico.data.datasets[0].data = datos;
+      this.grafico.update();
+    }
+  });
 
   protected readonly mostrarFormulario = signal(false);
   protected readonly tipoMovimiento = signal<'ingreso' | 'gasto'>('gasto');
@@ -130,7 +156,7 @@ private actualizarGrafico(): void {
     return;
   }
 
-  const datos = [this.ingresos(), this.gastos()];
+  const datos = [this.ingresosFiltrados(), this.gastosFiltrados()];
 
   if (this.grafico) {
     this.grafico.data.datasets[0].data = datos;
@@ -165,28 +191,21 @@ private actualizarGrafico(): void {
   private cargarMovimientos(): void {
     this.servicioMovimientos.obtenerMovimientos().subscribe({
       next: (datos: MovimientoAPI[]) => {
-        const lista: Movimiento[] = datos.map(movimiento => ({
+        const lista: Movimiento[] = datos.map(movimiento => {
+          const fecha = normalizarFecha(movimiento.fecha_movimiento);
+
+          return {
         id: movimiento.id,
         categoria_id: movimiento.categoria_id,
         descripcion: movimiento.descripcion,
-        tipo: movimiento.tipo === 'INGRESO' ? 'ingreso' : 'gasto',
+        tipo: movimiento.tipo === 'INGRESO' ? 'ingreso' as const : 'gasto' as const,
         monto: Number(movimiento.monto),
-        fecha: movimiento.fecha_movimiento,
-      }));
+        fecha,
+        fechaOrden: Date.parse(fecha)
+          };
+        }).sort((a, b) => b.fechaOrden - a.fechaOrden);
 
         this.movimientos.set(lista);
-
-        this.ingresos.set(
-          lista
-            .filter(movimiento => movimiento.tipo === 'ingreso')
-            .reduce((total, movimiento) => total + movimiento.monto, 0)
-        );
-
-        this.gastos.set(
-          lista
-            .filter(movimiento => movimiento.tipo === 'gasto')
-            .reduce((total, movimiento) => total + movimiento.monto, 0)
-        );
 
         this.actualizarGrafico();
       },
@@ -362,6 +381,10 @@ private cargarDatos(): void {
     this.categoriaFiltro.set(valor === '' ? null : Number(valor));
   }
 
+  protected etiquetaCategoria(id: number | null): string {
+    return this.categorias().find(categoria => categoria.id === id)?.nombre ?? 'Sin categoría';
+  }
+
 protected iniciarSesion(): void {
   const correo = this.correo().trim();
   const password = this.password();
@@ -448,7 +471,8 @@ protected guardarMovimiento(): void {
           descripcion: concepto,
           tipo,
           monto: montoIngresado,
-          fecha: new Date().toISOString().slice(0, 10)
+          fecha: new Date().toISOString(),
+          fechaOrden: Date.now()
         };
 
         this.movimientos.update(lista => [
@@ -471,17 +495,6 @@ protected guardarMovimiento(): void {
         );
       }
 
-      this.ingresos.set(
-        this.movimientos()
-          .filter(movimiento => movimiento.tipo === 'ingreso')
-          .reduce((total, movimiento) => total + movimiento.monto, 0)
-      );
-
-      this.gastos.set(
-        this.movimientos()
-          .filter(movimiento => movimiento.tipo === 'gasto')
-          .reduce((total, movimiento) => total + movimiento.monto, 0)
-      );
 
       this.descripcion.set('');
       this.monto.set(null);
@@ -526,15 +539,6 @@ protected eliminarMovimiento(id: number): void {
         lista.filter(movimiento => movimiento.id !== id)
       );
 
-      if (movimientoEliminado.tipo === 'ingreso') {
-        this.ingresos.update(
-          total => total - movimientoEliminado.monto
-        );
-      } else {
-        this.gastos.update(
-          total => total - movimientoEliminado.monto
-        );
-      }
       this.mostrarConfirmacion('Movimiento eliminado correctamente.');
     },
     error: (error) => {

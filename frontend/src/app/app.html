@@ -52,19 +52,19 @@
 
     <section class="tarjeta-principal">
       <p>Balance disponible</p>
-      <h2>₡{{ balance() | number:'1.2-2'}}</h2>
+      <h2>{{ balance() | currency:'CRC':'symbol':'1.2-2':'es-CR' }}</h2>
       <p class="descripcion">Resumen de tus finanzas</p>
     </section>
 
     <section class="resumen">
       <article class="tarjeta ingreso">
         <p>Ingresos</p>
-        <h3>₡{{ ingresos() | number:'1.0-0'}}</h3>
+        <h3>{{ ingresosFiltrados() | currency:'CRC':'symbol':'1.0-0':'es-CR' }}</h3>
       </article>
 
       <article class="tarjeta gasto">
         <p>Gastos</p>
-        <h3>₡{{ gastos() | number:'1.0-0'}}</h3>
+        <h3>{{ gastosFiltrados() | currency:'CRC':'symbol':'1.0-0':'es-CR' }}</h3>
       </article>
     </section>
 
@@ -162,16 +162,20 @@
 
       <div class="detalle">
         <h3>{{ movimiento.descripcion }}</h3>
-        <p>{{ movimiento.fecha }} · {{ movimiento.tipo === 'ingreso' ? 'Ingreso' : 'Gasto' }}</p>
+        <p>
+          {{ movimiento.fecha | date:'dd/MM/yyyy, HH:mm':'America/Costa_Rica' }} ·
+          {{ etiquetaCategoria(movimiento.categoria_id) }} ·
+          {{ movimiento.tipo === 'ingreso' ? 'Ingreso' : 'Gasto' }}
+        </p>
       </div>
 
       @if (movimiento.tipo === 'ingreso') {
         <strong class="monto-positivo">
-          +₡{{ movimiento.monto | number:'1.2-2' }}
+          +{{ movimiento.monto | currency:'CRC':'symbol':'1.2-2':'es-CR' }}
         </strong>
       } @else {
         <strong class="monto-negativo">
-          -₡{{ movimiento.monto | number:'1.2-2' }}
+          -{{ movimiento.monto | currency:'CRC':'symbol':'1.2-2':'es-CR' }}
         </strong>
       }
       
