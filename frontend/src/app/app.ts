@@ -189,7 +189,9 @@ private actualizarGrafico(): void {
 }
 
   private cargarMovimientos(): void {
-    this.servicioMovimientos.obtenerMovimientos().subscribe({
+    this.servicioMovimientos.obtenerMovimientos()
+      .pipe(retry({ count: 2, delay: 1000 }))
+      .subscribe({
       next: (datos: MovimientoAPI[]) => {
         const lista: Movimiento[] = datos.map(movimiento => {
           const fecha = normalizarFecha(movimiento.fecha_movimiento);
@@ -209,8 +211,12 @@ private actualizarGrafico(): void {
 
         this.actualizarGrafico();
       },
-      error: () => {
-        this.errorCarga.set('No se pudieron cargar los movimientos.');
+      error: (error: HttpErrorResponse) => {
+        this.errorCarga.set(
+          error.status === 401
+            ? 'La sesión expiró. Cierra sesión y vuelve a entrar.'
+            : 'No se pudieron cargar los movimientos. Verifica la conexión con la base de datos.'
+        );
       }
     });
   }

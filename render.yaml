@@ -18,7 +18,7 @@ services:
       - key: DB_PASSWORD
         sync: false
       - key: DB_NAME
-        value: mi_finanzas
+        sync: false
       - key: DB_SSL_CA
         sync: false
       - key: CORS_ORIGINS

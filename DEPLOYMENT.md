@@ -11,7 +11,7 @@ No se deben publicar `backend/.env`, credenciales, puertos MySQL ni respuestas d
 ## Base de datos
 
 1. Conservar el respaldo local `.sql` creado antes de migrar.
-2. Usar la base `test` que proporciona el clúster de TiDB y restringir sus credenciales al backend.
+2. Usar la base que contiene las tablas y datos importados, y restringir sus credenciales al backend. El nombre debe coincidir exactamente con `DB_NAME`.
 3. Importar el esquema y los datos desde MySQL Workbench.
 4. Confirmar antes de borrar nada:
 
@@ -40,7 +40,7 @@ DB_HOST=<host-de-produccion>
 DB_PORT=4000
 DB_USER=<usuario-de-produccion>
 DB_PASSWORD=<secreto-de-produccion>
-DB_NAME=test
+DB_NAME=<nombre-exacto-de-la-base-con-los-datos>
 SESSION_SECRET=<secreto-aleatorio-largo>
 CORS_ORIGINS=<url-https-del-frontend>
 ```
