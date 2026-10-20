@@ -163,7 +163,7 @@
       <div class="detalle">
         <h3>{{ movimiento.descripcion }}</h3>
         <p>
-          {{ movimiento.fecha | date:'dd/MM/yyyy, HH:mm':'America/Costa_Rica' }} ·
+          {{ movimiento.fecha | date:'dd/MM/yyyy, HH:mm':'-0600' }} ·
           {{ etiquetaCategoria(movimiento.categoria_id) }} ·
           {{ movimiento.tipo === 'ingreso' ? 'Ingreso' : 'Gasto' }}
         </p>
