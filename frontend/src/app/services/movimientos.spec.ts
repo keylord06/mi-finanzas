@@ -13,12 +13,12 @@ describe('Movimientos', () => {
     });
     service = TestBed.inject(Movimientos);
     http = TestBed.inject(HttpTestingController);
-    sessionStorage.setItem('mi_finanzas_csrf', 'csrf-test');
-    sessionStorage.setItem('mi_finanzas_session_token', 'session-test');
+    localStorage.setItem('mi_finanzas_csrf', 'csrf-test');
+    localStorage.setItem('mi_finanzas_session_token', 'session-test');
   });
 
   afterEach(() => {
-    sessionStorage.clear();
+    localStorage.clear();
     http.verify();
   });
 

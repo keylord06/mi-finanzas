@@ -1,16 +1,117 @@
-
-import { CurrencyPipe, DatePipe } from '@angular/common';
-import { Component, computed, effect, signal, inject, OnInit } from '@angular/core';
+import { CurrencyPipe, DatePipe, formatDate } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { RouterOutlet } from '@angular/router';
-import { Movimientos, Movimiento as MovimientoAPI } from './services/movimientos';
-import { Categorias, Categoria, DatosCategoria } from './services/categorias';
+import { Component, HostListener, OnInit, computed, effect, inject, signal } from '@angular/core';
+import { MonoTypeOperatorFunction, Observable, finalize, retry, throwError, timer } from 'rxjs';
 import { Auth } from './services/auth';
-import { AfterViewInit, ElementRef, ViewChild } from '@angular/core';
-import { Chart, registerables } from 'chart.js';
-import { MonoTypeOperatorFunction, finalize, retry, throwError, timer } from 'rxjs';
+import { Categoria, Categorias, DatosCategoria } from './services/categorias';
+import { Movimiento as MovimientoAPI, Movimientos, NuevoMovimiento } from './services/movimientos';
 
-Chart.register(...registerables);
+type Tipo = 'INGRESO' | 'GASTO';
+type FiltroTipo = 'TODOS' | Tipo;
+type Periodo = 'TODO' | 'MES' | 'MES_ANTERIOR';
+
+interface Movimiento {
+  id: number;
+  categoria_id: number | null;
+  descripcion: string;
+  tipo: Tipo;
+  monto: number;
+  fecha: string;
+  fechaOrden: number;
+  dia: string;
+}
+
+interface GrupoDia {
+  dia: string;
+  etiqueta: string;
+  total: number;
+  movimientos: Movimiento[];
+}
+
+interface GastoCategoria {
+  id: number | null;
+  nombre: string;
+  color: string;
+  icono: string;
+  total: number;
+  porcentaje: number;
+}
+
+// Costa Rica no usa horario de verano: siempre UTC-6.
+const ZONA_CR = '-0600';
+const DESFASE_CR_MS = 6 * 60 * 60 * 1000;
+const COLOR_SIN_CATEGORIA = '#64748B';
+
+export const ICONOS: Record<string, string> = {
+  wallet: '💼',
+  'plus-circle': '➕',
+  utensils: '🍽️',
+  car: '🚗',
+  'book-open': '📚',
+  'gamepad-2': '🎮',
+  'heart-pulse': '🩺',
+  home: '🏠',
+  'shopping-bag': '🛍️',
+  bolt: '💡',
+  phone: '📱',
+  gift: '🎁',
+  plane: '✈️',
+  paw: '🐾',
+  beer: '🍺',
+  ball: '⚽',
+  circle: '🏷️'
+};
+
+const ICONOS_DISPONIBLES = Object.keys(ICONOS);
+
+const PERIODOS: { valor: Periodo; etiqueta: string }[] = [
+  { valor: 'TODO', etiqueta: 'Todo' },
+  { valor: 'MES', etiqueta: 'Este mes' },
+  { valor: 'MES_ANTERIOR', etiqueta: 'Mes pasado' }
+];
+
+function diaCostaRica(ms: number): string {
+  return new Date(ms - DESFASE_CR_MS).toISOString().slice(0, 10);
+}
+
+function normalizarFecha(fecha: string): string {
+  const valor = fecha.trim().replace(' ', 'T');
+
+  return /(?:Z|[+-]\d{2}:?\d{2})$/.test(valor) ? valor : `${valor}Z`;
+}
+
+function rangoPeriodo(periodo: Periodo): [string, string] {
+  if (periodo === 'TODO') {
+    return ['', ''];
+  }
+
+  const [anio, mes] = diaCostaRica(Date.now()).split('-').map(Number);
+  const primerDia = (mesBase: number) =>
+    new Date(Date.UTC(anio, mesBase - 1, 1)).toISOString().slice(0, 10);
+
+  if (periodo === 'MES') {
+    return [primerDia(mes), ''];
+  }
+
+  const ultimoDiaMesAnterior = new Date(Date.UTC(anio, mes - 1, 0)).toISOString().slice(0, 10);
+  return [primerDia(mes - 1), ultimoDiaMesAnterior];
+}
+
+function aMovimiento(movimiento: MovimientoAPI): Movimiento {
+  const fecha = normalizarFecha(String(movimiento.fecha_movimiento));
+  const fechaOrden = Date.parse(fecha);
+
+  return {
+    id: movimiento.id,
+    categoria_id: movimiento.categoria_id,
+    descripcion: movimiento.descripcion,
+    tipo: movimiento.tipo,
+    monto: Number(movimiento.monto),
+    fecha,
+    fechaOrden,
+    dia: diaCostaRica(fechaOrden)
+  };
+}
 
 // Reintenta solo errores de red o del servidor; un 401/400 no se arregla reintentando.
 function reintentoTransitorio<T>(): MonoTypeOperatorFunction<T> {
@@ -21,236 +122,521 @@ function reintentoTransitorio<T>(): MonoTypeOperatorFunction<T> {
   });
 }
 
-interface Movimiento {
-  id: number;
-  categoria_id: number | null;
-  descripcion: string;
-  tipo: 'ingreso' | 'gasto';
-  monto: number;
-  fecha: string;
-  fechaOrden: number;
-}
-
-type FiltroTipo = 'TODOS' | 'INGRESO' | 'GASTO';
-
-function normalizarFecha(fecha: string): string {
-  const valor = fecha.trim().replace(' ', 'T');
-
-  return /(?:Z|[+-]\d{2}:?\d{2})$/.test(valor) ? valor : `${valor}Z`;
+function mensajeError(error: HttpErrorResponse, alternativo: string): string {
+  return typeof error.error?.mensaje === 'string' ? error.error.mensaje : alternativo;
 }
 
 @Component({
-  imports: [RouterOutlet, CurrencyPipe, DatePipe],
+  imports: [CurrencyPipe, DatePipe],
   selector: 'app-root',
-  styleUrl: './app.css',
-  templateUrl: './app.html',
+  templateUrl: './app.html'
 })
-export class App implements OnInit, AfterViewInit {
+export class App implements OnInit {
   private servicioMovimientos = inject(Movimientos);
-
   private servicioCategorias = inject(Categorias);
-
   private auth = inject(Auth);
 
+  protected readonly zonaCR = ZONA_CR;
+  protected readonly iconos = ICONOS;
+  protected readonly iconosDisponibles = ICONOS_DISPONIBLES;
+  protected readonly periodos = PERIODOS;
+
+  protected readonly verificandoSesion = signal(true);
   protected readonly autenticado = signal(false);
+  protected readonly iniciandoSesion = signal(false);
   protected readonly correo = signal('');
   protected readonly password = signal('');
   protected readonly errorSesion = signal('');
+  protected readonly usuario = this.auth.usuario;
+  protected readonly inicial = computed(() =>
+    (this.usuario()?.nombre.trim()[0] ?? '?').toLocaleUpperCase()
+  );
 
   protected readonly categorias = signal<Categoria[]>([]);
   protected readonly cargandoCategorias = signal(false);
   protected readonly categoriaSeleccionada = signal<number | null>(null);
 
   protected readonly movimientos = signal<Movimiento[]>([]);
+  protected readonly cargandoMovimientos = signal(false);
   protected readonly busqueda = signal('');
   protected readonly tipoFiltro = signal<FiltroTipo>('TODOS');
   protected readonly categoriaFiltro = signal<number | null>(null);
   protected readonly fechaDesde = signal('');
   protected readonly fechaHasta = signal('');
+
   protected readonly confirmacion = signal('');
+  protected readonly errorCarga = signal('');
+  protected readonly guardando = signal(false);
+
   protected readonly mostrarGestionCategorias = signal(false);
   protected readonly categoriaEditandoId = signal<number | null>(null);
   protected readonly nombreCategoria = signal('');
-  protected readonly tipoCategoria = signal<'INGRESO' | 'GASTO'>('GASTO');
+  protected readonly tipoCategoria = signal<Tipo>('GASTO');
   protected readonly colorCategoria = signal('#64748B');
   protected readonly iconoCategoria = signal('circle');
+
   protected readonly mostrarSeguridad = signal(false);
   protected readonly mostrarMenuCuenta = signal(false);
   protected readonly mostrarFiltros = signal(false);
-  protected readonly mostrarResumenGrafico = signal(false);
   protected readonly passwordActual = signal('');
   protected readonly passwordNueva = signal('');
   protected readonly passwordConfirmacion = signal('');
+
+  protected readonly mostrarFormulario = signal(false);
+  protected readonly tipoMovimiento = signal<Tipo>('GASTO');
+  protected readonly movimientoEditandoId = signal<number | null>(null);
+  protected readonly descripcion = signal('');
+  protected readonly monto = signal<number | null>(null);
+  protected readonly errorFormulario = signal('');
+
+  private temporizadorConfirmacion?: ReturnType<typeof setTimeout>;
+
+  protected readonly categoriasPorId = computed(
+    () => new Map(this.categorias().map(categoria => [categoria.id, categoria]))
+  );
+
+  protected readonly categoriasDelTipo = computed(() =>
+    this.categorias().filter(categoria => categoria.tipo === this.tipoMovimiento())
+  );
+
+  protected readonly periodoActivo = computed<Periodo | null>(() => {
+    const desde = this.fechaDesde();
+    const hasta = this.fechaHasta();
+
+    return PERIODOS.find(({ valor }) => {
+      const [inicio, fin] = rangoPeriodo(valor);
+      return inicio === desde && fin === hasta;
+    })?.valor ?? null;
+  });
+
+  protected readonly etiquetaPeriodo = computed(() => {
+    switch (this.periodoActivo()) {
+      case 'TODO': return 'total';
+      case 'MES': return 'de este mes';
+      case 'MES_ANTERIOR': return 'del mes pasado';
+      default: return 'del periodo';
+    }
+  });
+
+  protected readonly filtrosActivos = computed(() =>
+    (this.tipoFiltro() !== 'TODOS' ? 1 : 0) +
+    (this.categoriaFiltro() !== null ? 1 : 0) +
+    (this.periodoActivo() === null ? 1 : 0)
+  );
+
+  // Movimientos del periodo (sin búsqueda ni tipo) para el resumen.
+  private readonly movimientosPeriodo = computed(() => {
+    const desde = this.fechaDesde();
+    const hasta = this.fechaHasta();
+
+    if (!desde && !hasta) {
+      return this.movimientos();
+    }
+
+    return this.movimientos().filter(movimiento =>
+      (!desde || movimiento.dia >= desde) && (!hasta || movimiento.dia <= hasta)
+    );
+  });
 
   protected readonly movimientosFiltrados = computed(() => {
     const termino = this.busqueda().trim().toLocaleLowerCase();
     const tipo = this.tipoFiltro();
     const categoria = this.categoriaFiltro();
-    const desde = this.fechaDesde();
-    const hasta = this.fechaHasta();
 
-    return this.movimientos().filter(movimiento => {
-      const coincideTexto = !termino ||
-        movimiento.descripcion.toLocaleLowerCase().includes(termino);
-      const coincideTipo = tipo === 'TODOS' ||
-        movimiento.tipo === tipo.toLocaleLowerCase();
-      const coincideCategoria = categoria === null ||
-        movimiento.categoria_id === categoria;
-      const fecha = movimiento.fecha.slice(0, 10);
-      const coincideDesde = !desde || fecha >= desde;
-      const coincideHasta = !hasta || fecha <= hasta;
-
-      return coincideTexto && coincideTipo && coincideCategoria &&
-        coincideDesde && coincideHasta;
-    });
+    return this.movimientosPeriodo().filter(movimiento =>
+      (!termino || movimiento.descripcion.toLocaleLowerCase().includes(termino)) &&
+      (tipo === 'TODOS' || movimiento.tipo === tipo) &&
+      (categoria === null || movimiento.categoria_id === categoria)
+    );
   });
 
-  protected readonly ingresosFiltrados = computed(() =>
-    this.movimientosFiltrados()
-      .filter(movimiento => movimiento.tipo === 'ingreso')
-      .reduce((total, movimiento) => total + movimiento.monto, 0)
-  );
+  protected readonly ingresos = computed(() => this.sumar(this.movimientosPeriodo(), 'INGRESO'));
+  protected readonly gastos = computed(() => this.sumar(this.movimientosPeriodo(), 'GASTO'));
+  protected readonly balance = computed(() => this.ingresos() - this.gastos());
 
-  protected readonly gastosFiltrados = computed(() =>
-    this.movimientosFiltrados()
-      .filter(movimiento => movimiento.tipo === 'gasto')
-      .reduce((total, movimiento) => total + movimiento.monto, 0)
-  );
+  protected readonly porcentajeGastado = computed(() => {
+    const ingresos = this.ingresos();
+    return ingresos > 0 ? Math.round((this.gastos() / ingresos) * 100) : null;
+  });
 
-  protected readonly balance = computed(() =>
-    this.ingresosFiltrados() - this.gastosFiltrados()
-  );
+  protected readonly gastosPorCategoria = computed<GastoCategoria[]>(() => {
+    const totales = new Map<number | null, number>();
 
-  @ViewChild('graficoFinanzas')
-graficoFinanzas!: ElementRef<HTMLCanvasElement>;
-
-private grafico: Chart | null = null;
-
-  private readonly sincronizarGrafico = effect(() => {
-    const datos = [this.ingresosFiltrados(), this.gastosFiltrados()];
-
-    if (this.grafico) {
-      this.grafico.data.datasets[0].data = datos;
-      this.grafico.update();
+    for (const movimiento of this.movimientosPeriodo()) {
+      if (movimiento.tipo === 'GASTO') {
+        totales.set(movimiento.categoria_id, (totales.get(movimiento.categoria_id) ?? 0) + movimiento.monto);
+      }
     }
+
+    const totalGastos = this.gastos() || 1;
+
+    return [...totales]
+      .map(([id, total]) => {
+        const categoria = id === null ? undefined : this.categoriasPorId().get(id);
+
+        return {
+          id,
+          nombre: categoria?.nombre ?? 'Sin categoría',
+          color: categoria?.color ?? COLOR_SIN_CATEGORIA,
+          icono: categoria?.icono ?? 'circle',
+          total,
+          porcentaje: Math.round((total / totalGastos) * 100)
+        };
+      })
+      .sort((a, b) => b.total - a.total);
   });
 
-  protected readonly mostrarFormulario = signal(false);
-  protected readonly tipoMovimiento = signal<'ingreso' | 'gasto'>('gasto');
-  protected readonly movimientoEditandoId = signal<number | null>(null);
-  protected readonly descripcion = signal('');
-  protected readonly monto = signal<number | null>(null);
-  protected readonly errorCarga = signal('');
+  protected readonly grupos = computed<GrupoDia[]>(() => {
+    const hoy = diaCostaRica(Date.now());
+    const ayer = diaCostaRica(Date.now() - 24 * 60 * 60 * 1000);
+    const grupos: GrupoDia[] = [];
+
+    for (const movimiento of this.movimientosFiltrados()) {
+      let grupo = grupos[grupos.length - 1];
+
+      if (!grupo || grupo.dia !== movimiento.dia) {
+        grupo = {
+          dia: movimiento.dia,
+          etiqueta: movimiento.dia === hoy
+            ? 'Hoy'
+            : movimiento.dia === ayer
+              ? 'Ayer'
+              : formatDate(`${movimiento.dia}T12:00:00Z`, "EEEE d 'de' MMMM", 'es-CR', 'UTC'),
+          total: 0,
+          movimientos: []
+        };
+        grupos.push(grupo);
+      }
+
+      grupo.movimientos.push(movimiento);
+      grupo.total += movimiento.tipo === 'INGRESO' ? movimiento.monto : -movimiento.monto;
+    }
+
+    return grupos;
+  });
+
+  // Los modales de categorías y seguridad muestran errorCarga dentro de su propio panel.
+  protected readonly hayCapaConError = computed(() =>
+    this.mostrarGestionCategorias() || this.mostrarSeguridad()
+  );
+
+  private readonly hayModalAbierto = computed(() =>
+    this.mostrarFormulario() || this.mostrarGestionCategorias() || this.mostrarSeguridad()
+  );
+
+  // Evita que la página de fondo se desplace mientras hay un modal abierto (iOS).
+  private readonly bloquearScroll = effect(() => {
+    document.documentElement.classList.toggle('sin-scroll', this.hayModalAbierto());
+  });
 
   ngOnInit(): void {
-    this.auth.comprobarSesion().subscribe({
-      next: () => {
-        this.autenticado.set(true);
-        this.cargarDatos();
-      },
-      error: () => {
-        sessionStorage.removeItem('mi_finanzas_csrf');
-        sessionStorage.removeItem('mi_finanzas_session_token');
-        this.autenticado.set(false);
-      }
-    });
-  }
-
-ngAfterViewInit(): void {
-  this.actualizarGrafico();
-}
-
-private actualizarGrafico(): void {
-  if (!this.autenticado() || !this.graficoFinanzas) {
-    return;
-  }
-
-  const datos = [this.ingresosFiltrados(), this.gastosFiltrados()];
-
-  if (this.grafico) {
-    this.grafico.data.datasets[0].data = datos;
-    this.grafico.update();
-    return;
-  }
-
-  this.grafico = new Chart(this.graficoFinanzas.nativeElement, {
-    type: 'bar',
-    data: {
-      labels: ['Ingresos', 'Gastos'],
-      datasets: [
-        {
-          label: 'Monto en colones',
-          data: datos,
-          backgroundColor: ['#22c55e', '#ef4444']
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: true,
-      scales: {
-        y: {
-          beginAtZero: true
-        }
-      }
-    }
-  });
-}
-
-  private cargarMovimientos(): void {
-    this.servicioMovimientos.obtenerMovimientos()
-      .pipe(reintentoTransitorio())
-      .subscribe({
-      next: (datos: MovimientoAPI[]) => {
-        const lista: Movimiento[] = datos.map(movimiento => {
-          const fecha = normalizarFecha(movimiento.fecha_movimiento);
-
-          return {
-        id: movimiento.id,
-        categoria_id: movimiento.categoria_id,
-        descripcion: movimiento.descripcion,
-        tipo: movimiento.tipo === 'INGRESO' ? 'ingreso' as const : 'gasto' as const,
-        monto: Number(movimiento.monto),
-        fecha,
-        fechaOrden: Date.parse(fecha)
-          };
-        }).sort((a, b) => b.fechaOrden - a.fechaOrden);
-
-        this.movimientos.set(lista);
-      },
-      error: (error: HttpErrorResponse) => {
-        this.errorCarga.set(
-          error.status === 401
-            ? 'La sesión expiró. Cierra sesión y vuelve a entrar.'
-            : 'No se pudieron cargar los movimientos. Verifica la conexión con la base de datos.'
-        );
-      }
-    });
-  }
-
-  protected abrirFormulario(): void {
-    this.mostrarFormulario.set(true);
-  }
-
-  protected alternarResumenGrafico(): void {
-    if (this.mostrarResumenGrafico()) {
-      this.grafico?.destroy();
-      this.grafico = null;
-      this.mostrarResumenGrafico.set(false);
+    if (!this.auth.tieneSesionGuardada()) {
+      this.verificandoSesion.set(false);
       return;
     }
 
-    this.mostrarResumenGrafico.set(true);
-    setTimeout(() => this.actualizarGrafico());
+    this.auth.comprobarSesion()
+      .pipe(reintentoTransitorio(), finalize(() => this.verificandoSesion.set(false)))
+      .subscribe({
+        next: () => {
+          this.autenticado.set(true);
+          this.cargarDatos();
+        },
+        error: () => this.auth.limpiarSesionLocal()
+      });
   }
 
+  @HostListener('document:keydown.escape')
+  protected cerrarCapaSuperior(): void {
+    if (this.mostrarFormulario()) {
+      this.cerrarFormulario();
+    } else if (this.mostrarGestionCategorias()) {
+      this.mostrarGestionCategorias.set(false);
+    } else if (this.mostrarSeguridad()) {
+      this.mostrarSeguridad.set(false);
+    } else {
+      this.mostrarMenuCuenta.set(false);
+    }
+  }
+
+  // Muestra céntimos solo cuando el monto los tiene: ₡650 000 y ₡38 450,50.
+  protected formato(monto: number): string {
+    return Number.isInteger(Math.round(monto * 100) / 100) ? '1.0-0' : '1.2-2';
+  }
+
+  protected iconoDe(nombre: string | undefined): string {
+    return ICONOS[nombre ?? 'circle'] ?? ICONOS['circle'];
+  }
+
+  protected categoriaDe(id: number | null): Categoria | undefined {
+    return id === null ? undefined : this.categoriasPorId().get(id);
+  }
+
+  // ---------- Sesión ----------
+
+  protected iniciarSesion(): void {
+    const correo = this.correo().trim();
+    const password = this.password();
+
+    if (!correo || !password) {
+      this.errorSesion.set('Escribe tu correo y contraseña.');
+      return;
+    }
+
+    this.iniciandoSesion.set(true);
+    this.errorSesion.set('');
+
+    this.auth.iniciarSesion(correo, password)
+      .pipe(finalize(() => this.iniciandoSesion.set(false)))
+      .subscribe({
+        next: () => {
+          this.autenticado.set(true);
+          this.password.set('');
+          this.cargarDatos();
+        },
+        error: (error: HttpErrorResponse) => {
+          this.errorSesion.set(
+            error.status === 0
+              ? 'No se pudo conectar con el servidor. Intenta de nuevo en unos segundos.'
+              : mensajeError(error, 'Correo o contraseña incorrectos.')
+          );
+        }
+      });
+  }
+
+  protected cerrarSesion(): void {
+    this.mostrarMenuCuenta.set(false);
+    this.auth.cerrarSesion().subscribe({ error: () => undefined });
+    this.salir();
+  }
+
+  private salir(mensaje = ''): void {
+    this.auth.limpiarSesionLocal();
+    this.autenticado.set(false);
+    this.movimientos.set([]);
+    this.categorias.set([]);
+    this.errorCarga.set('');
+    this.errorSesion.set(mensaje);
+  }
+
+  private manejarErrorCarga(error: HttpErrorResponse, mensaje: string): void {
+    if (error.status === 401) {
+      this.salir('Tu sesión expiró. Vuelve a iniciar sesión.');
+      return;
+    }
+
+    this.errorCarga.set(mensaje);
+  }
+
+  // ---------- Carga de datos ----------
+
+  private cargarDatos(): void {
+    this.cargarMovimientos();
+    this.cargarCategorias();
+  }
+
+  protected reintentarCarga(): void {
+    this.errorCarga.set('');
+    this.cargarDatos();
+  }
+
+  private cargarMovimientos(): void {
+    this.cargandoMovimientos.set(true);
+
+    this.servicioMovimientos.obtenerMovimientos()
+      .pipe(reintentoTransitorio(), finalize(() => this.cargandoMovimientos.set(false)))
+      .subscribe({
+        next: datos => {
+          this.movimientos.set(datos.map(aMovimiento).sort((a, b) => b.fechaOrden - a.fechaOrden));
+        },
+        error: (error: HttpErrorResponse) =>
+          this.manejarErrorCarga(error, 'No se pudieron cargar los movimientos.')
+      });
+  }
+
+  private cargarCategorias(): void {
+    this.cargandoCategorias.set(true);
+
+    this.servicioCategorias.obtenerCategorias()
+      .pipe(reintentoTransitorio(), finalize(() => this.cargandoCategorias.set(false)))
+      .subscribe({
+        next: datos => this.categorias.set(datos),
+        error: (error: HttpErrorResponse) =>
+          this.manejarErrorCarga(error, 'No se pudieron cargar las categorías.')
+      });
+  }
+
+  private sumar(lista: Movimiento[], tipo: Tipo): number {
+    return lista.reduce((total, movimiento) => movimiento.tipo === tipo ? total + movimiento.monto : total, 0);
+  }
+
+  // ---------- Filtros ----------
+
+  protected seleccionarPeriodo(periodo: Periodo): void {
+    const [desde, hasta] = rangoPeriodo(periodo);
+    this.fechaDesde.set(desde);
+    this.fechaHasta.set(hasta);
+  }
+
+  protected limpiarFiltros(): void {
+    this.busqueda.set('');
+    this.tipoFiltro.set('TODOS');
+    this.categoriaFiltro.set(null);
+    this.seleccionarPeriodo('TODO');
+  }
+
+  protected actualizarCategoriaFiltro(valor: string): void {
+    this.categoriaFiltro.set(valor === '' ? null : Number(valor));
+  }
+
+  // ---------- Movimientos ----------
+
+  protected abrirFormulario(): void {
+    this.movimientoEditandoId.set(null);
+    this.tipoMovimiento.set('GASTO');
+    this.descripcion.set('');
+    this.monto.set(null);
+    this.categoriaSeleccionada.set(null);
+    this.errorFormulario.set('');
+    this.mostrarFormulario.set(true);
+  }
+
+  protected editarMovimiento(id: number): void {
+    const movimiento = this.movimientos().find(item => item.id === id);
+
+    if (!movimiento) {
+      return;
+    }
+
+    this.movimientoEditandoId.set(movimiento.id);
+    this.tipoMovimiento.set(movimiento.tipo);
+    this.descripcion.set(movimiento.descripcion);
+    this.monto.set(movimiento.monto);
+    this.categoriaSeleccionada.set(movimiento.categoria_id);
+    this.errorFormulario.set('');
+    this.mostrarFormulario.set(true);
+  }
+
+  protected cerrarFormulario(): void {
+    this.mostrarFormulario.set(false);
+    this.movimientoEditandoId.set(null);
+  }
+
+  protected cambiarTipoMovimiento(tipo: Tipo): void {
+    this.tipoMovimiento.set(tipo);
+
+    if (this.categoriaDe(this.categoriaSeleccionada())?.tipo !== tipo) {
+      this.categoriaSeleccionada.set(null);
+    }
+  }
+
+  protected actualizarMonto(valor: string): void {
+    const numero = Number(valor.replace(',', '.'));
+    this.monto.set(valor.trim() === '' || !Number.isFinite(numero) ? null : numero);
+  }
+
+  protected guardarMovimiento(): void {
+    if (this.guardando()) {
+      return;
+    }
+
+    const monto = this.monto();
+    const descripcion = this.descripcion().trim();
+    const tipo = this.tipoMovimiento();
+    const categoriaId = this.categoriaSeleccionada();
+    const id = this.movimientoEditandoId();
+
+    if (monto === null || monto <= 0) {
+      this.errorFormulario.set('Escribe un monto mayor que cero.');
+      return;
+    }
+
+    if (!descripcion) {
+      this.errorFormulario.set('Escribe una descripción.');
+      return;
+    }
+
+    if (categoriaId === null) {
+      this.errorFormulario.set('Elige una categoría.');
+      return;
+    }
+
+    const datos: NuevoMovimiento = { tipo, descripcion, monto, categoria_id: categoriaId };
+    const operacion: Observable<unknown> = id === null
+      ? this.servicioMovimientos.crearMovimiento(datos)
+      : this.servicioMovimientos.actualizarMovimiento(id, datos);
+
+    this.guardando.set(true);
+
+    operacion.pipe(finalize(() => this.guardando.set(false))).subscribe({
+      next: respuesta => {
+        if (id === null) {
+          const ahora = new Date().toISOString();
+          const nuevo = aMovimiento({
+            id: (respuesta as { id: number }).id,
+            usuario_id: this.usuario()?.id ?? 0,
+            categoria_id: categoriaId,
+            tipo,
+            descripcion,
+            monto: String(monto),
+            fecha_movimiento: ahora
+          });
+          this.movimientos.update(lista => [nuevo, ...lista]);
+        } else {
+          this.movimientos.update(lista =>
+            lista.map(movimiento =>
+              movimiento.id === id
+                ? { ...movimiento, categoria_id: categoriaId, descripcion, tipo, monto }
+                : movimiento
+            )
+          );
+        }
+
+        this.cerrarFormulario();
+        this.mostrarConfirmacion(id === null ? 'Movimiento guardado' : 'Movimiento actualizado');
+      },
+      error: (error: HttpErrorResponse) => {
+        if (error.status === 401) {
+          this.mostrarFormulario.set(false);
+          this.salir('Tu sesión expiró. Vuelve a iniciar sesión.');
+          return;
+        }
+
+        this.errorFormulario.set(mensajeError(error, 'No se pudo guardar el movimiento.'));
+      }
+    });
+  }
+
+  protected eliminarMovimiento(id: number): void {
+    if (this.guardando() || !confirm('¿Eliminar este movimiento? Esta acción no se puede deshacer.')) {
+      return;
+    }
+
+    this.guardando.set(true);
+
+    this.servicioMovimientos.eliminarMovimiento(id)
+      .pipe(finalize(() => this.guardando.set(false)))
+      .subscribe({
+        next: () => {
+          this.movimientos.update(lista => lista.filter(movimiento => movimiento.id !== id));
+          this.cerrarFormulario();
+          this.mostrarConfirmacion('Movimiento eliminado');
+        },
+        error: (error: HttpErrorResponse) =>
+          this.errorFormulario.set(mensajeError(error, 'No se pudo eliminar el movimiento.'))
+      });
+  }
+
+  // ---------- Categorías ----------
+
   protected abrirGestionCategorias(): void {
-    this.mostrarGestionCategorias.update(valor => !valor);
+    this.mostrarMenuCuenta.set(false);
     this.cancelarCategoria();
+    this.mostrarGestionCategorias.set(true);
   }
 
   protected editarCategoria(id: number): void {
-    const categoria = this.categorias().find(item => item.id === id);
+    const categoria = this.categoriasPorId().get(id);
 
     if (!categoria) {
       return;
@@ -260,7 +646,7 @@ private actualizarGrafico(): void {
     this.nombreCategoria.set(categoria.nombre);
     this.tipoCategoria.set(categoria.tipo);
     this.colorCategoria.set(categoria.color);
-    this.iconoCategoria.set(categoria.icono);
+    this.iconoCategoria.set(ICONOS[categoria.icono] ? categoria.icono : 'circle');
   }
 
   protected cancelarCategoria(): void {
@@ -269,14 +655,19 @@ private actualizarGrafico(): void {
     this.tipoCategoria.set('GASTO');
     this.colorCategoria.set('#64748B');
     this.iconoCategoria.set('circle');
+    this.errorCarga.set('');
   }
 
   protected guardarCategoria(): void {
+    if (this.guardando()) {
+      return;
+    }
+
     const datos: DatosCategoria = {
       nombre: this.nombreCategoria().trim(),
       tipo: this.tipoCategoria(),
       color: this.colorCategoria(),
-      icono: this.iconoCategoria().trim() || 'circle'
+      icono: this.iconoCategoria()
     };
 
     if (!datos.nombre || !/^#[0-9A-Fa-f]{6}$/.test(datos.color)) {
@@ -285,25 +676,20 @@ private actualizarGrafico(): void {
     }
 
     const id = this.categoriaEditandoId();
-    const operacion = id === null
+    const operacion: Observable<unknown> = id === null
       ? this.servicioCategorias.crearCategoria(datos)
       : this.servicioCategorias.actualizarCategoria(id, datos);
 
-    operacion.subscribe({
+    this.guardando.set(true);
+
+    operacion.pipe(finalize(() => this.guardando.set(false))).subscribe({
       next: () => {
         this.cancelarCategoria();
         this.cargarCategorias();
-        this.mostrarConfirmacion(
-          id === null ? 'Categoría creada correctamente.' : 'Categoría actualizada correctamente.'
-        );
+        this.mostrarConfirmacion(id === null ? 'Categoría creada' : 'Categoría actualizada');
       },
-      error: (error: HttpErrorResponse) => {
-        this.errorCarga.set(
-          typeof error.error?.mensaje === 'string'
-            ? error.error.mensaje
-            : 'No se pudo guardar la categoría.'
-        );
-      }
+      error: (error: HttpErrorResponse) =>
+        this.errorCarga.set(mensajeError(error, 'No se pudo guardar la categoría.'))
     });
   }
 
@@ -314,21 +700,26 @@ private actualizarGrafico(): void {
 
     this.servicioCategorias.eliminarCategoria(id).subscribe({
       next: () => {
-        this.cargarCategorias();
-        this.mostrarConfirmacion('Categoría desactivada correctamente.');
+        this.categorias.update(lista => lista.filter(categoria => categoria.id !== id));
+        if (this.categoriaEditandoId() === id) {
+          this.cancelarCategoria();
+        }
+        this.mostrarConfirmacion('Categoría desactivada');
       },
-      error: (error: HttpErrorResponse) => {
-        this.errorCarga.set(
-          typeof error.error?.mensaje === 'string'
-            ? error.error.mensaje
-            : 'No se pudo desactivar la categoría.'
-        );
-      }
+      error: (error: HttpErrorResponse) =>
+        this.errorCarga.set(mensajeError(error, 'No se pudo desactivar la categoría.'))
     });
   }
 
+  // ---------- Seguridad ----------
+
+  protected abrirSeguridad(): void {
+    this.mostrarMenuCuenta.set(false);
+    this.errorCarga.set('');
+    this.mostrarSeguridad.set(true);
+  }
+
   protected cambiarPassword(): void {
-    const actual = this.passwordActual();
     const nueva = this.passwordNueva();
 
     if (nueva.length < 12 || nueva !== this.passwordConfirmacion()) {
@@ -336,264 +727,27 @@ private actualizarGrafico(): void {
       return;
     }
 
-    this.auth.cambiarPassword(actual, nueva).subscribe({
-      next: () => {
-        this.passwordActual.set('');
-        this.passwordNueva.set('');
-        this.passwordConfirmacion.set('');
-        this.mostrarConfirmacion('Contraseña actualizada.');
-        this.mostrarSeguridad.set(false);
-      },
-      error: (error: HttpErrorResponse) => {
-        this.errorCarga.set(
-          typeof error.error?.mensaje === 'string'
-            ? error.error.mensaje
-            : 'No se pudo cambiar la contraseña.'
-        );
-      }
-    });
+    this.guardando.set(true);
+
+    this.auth.cambiarPassword(this.passwordActual(), nueva)
+      .pipe(finalize(() => this.guardando.set(false)))
+      .subscribe({
+        next: () => {
+          this.passwordActual.set('');
+          this.passwordNueva.set('');
+          this.passwordConfirmacion.set('');
+          this.errorCarga.set('');
+          this.mostrarSeguridad.set(false);
+          this.mostrarConfirmacion('Contraseña actualizada');
+        },
+        error: (error: HttpErrorResponse) =>
+          this.errorCarga.set(mensajeError(error, 'No se pudo cambiar la contraseña.'))
+      });
   }
-
-  
-protected editarMovimiento(id: number): void {
-  const movimiento = this.movimientos().find(
-    item => item.id === id
-  );
-
-  if (!movimiento) {
-    return;
-  }
-
-  this.movimientoEditandoId.set(movimiento.id);
-  this.tipoMovimiento.set(movimiento.tipo);
-  this.descripcion.set(movimiento.descripcion);
-  this.monto.set(movimiento.monto);
-  this.categoriaSeleccionada.set(movimiento.categoria_id);
-  this.mostrarFormulario.set(true);
-}
-
-private cargarDatos(): void {
-  this.cargarMovimientos();
-  this.cargarCategorias();
-}
-
-  protected reintentarCarga(): void {
-    this.errorCarga.set('');
-    this.cargarDatos();
-  }
-
-  protected limpiarFiltros(): void {
-    this.busqueda.set('');
-    this.tipoFiltro.set('TODOS');
-    this.categoriaFiltro.set(null);
-    this.fechaDesde.set('');
-    this.fechaHasta.set('');
-  }
-
-  protected actualizarCategoriaFiltro(valor: string): void {
-    this.categoriaFiltro.set(valor === '' ? null : Number(valor));
-  }
-
-  protected etiquetaCategoria(id: number | null): string {
-    return this.categorias().find(categoria => categoria.id === id)?.nombre ?? 'Sin categoría';
-  }
-
-protected iniciarSesion(): void {
-  const correo = this.correo().trim();
-  const password = this.password();
-
-  if (!correo || !password) {
-    this.errorSesion.set('Escribe tu correo y contraseña.');
-    return;
-  }
-
-  this.auth.iniciarSesion(correo, password).subscribe({
-    next: () => {
-      this.autenticado.set(true);
-      this.password.set('');
-      this.errorSesion.set('');
-      this.cargarDatos();
-    },
-    error: (error: HttpErrorResponse) => {
-      this.errorSesion.set(
-        typeof error.error?.mensaje === 'string'
-          ? error.error.mensaje
-          : 'Correo o contraseña incorrectos.'
-      );
-    }
-  });
-}
-
-protected cerrarSesion(): void {
-  this.auth.cerrarSesion().subscribe({
-    next: () => {
-      this.autenticado.set(false);
-      this.movimientos.set([]);
-      this.categorias.set([]);
-      this.errorCarga.set('');
-    },
-    error: () => this.errorSesion.set('No se pudo cerrar la sesión.')
-  });
-}
-
-
-  protected actualizarMonto(valor: string): void {
-    this.monto.set(valor === '' ? null : Number(valor));
-  }
-
-  protected actualizarCategoria(valor: string): void {
-    this.categoriaSeleccionada.set(valor === '' ? null : Number(valor));
-  }
-
-  
-protected guardarMovimiento(): void {
-  const montoIngresado = this.monto();
-  const concepto = this.descripcion().trim();
-  const tipo = this.tipoMovimiento();
-  const categoriaId = this.categoriaSeleccionada();
-  const id = this.movimientoEditandoId();
-
-  if (
-    montoIngresado === null ||
-    !Number.isFinite(montoIngresado) ||
-    montoIngresado <= 0 ||
-    concepto === '' ||
-    categoriaId === null
-  ) {
-    this.errorCarga.set('Completa todos los campos correctamente.');
-    return;
-  }
-
-  const datos = {
-    tipo: tipo === 'ingreso' ? 'INGRESO' as const : 'GASTO' as const,
-    descripcion: concepto,
-    monto: montoIngresado,
-    categoria_id: categoriaId
-  };
-
-  const operacion = id === null
-    ? this.servicioMovimientos.crearMovimiento(datos)
-    : this.servicioMovimientos.actualizarMovimiento(id, datos);
-
-  operacion.subscribe({
-    next: (respuesta) => {
-      if (id === null) {
-        if (!('id' in respuesta) || typeof respuesta.id !== 'number') {
-          this.errorCarga.set('La respuesta del servidor no incluye el identificador.');
-          return;
-        }
-
-        const nuevoMovimiento: Movimiento = {
-          id: respuesta.id,
-          categoria_id: categoriaId,
-          descripcion: concepto,
-          tipo,
-          monto: montoIngresado,
-          fecha: new Date().toISOString(),
-          fechaOrden: Date.now()
-        };
-
-        this.movimientos.update(lista => [
-          nuevoMovimiento,
-          ...lista
-        ]);
-      } else {
-        this.movimientos.update(lista =>
-          lista.map(movimiento =>
-            movimiento.id === id
-              ? {
-                  ...movimiento,
-                  categoria_id: categoriaId,
-                  descripcion: concepto,
-                  tipo,
-                  monto: montoIngresado
-                }
-              : movimiento
-          )
-        );
-      }
-
-
-      this.descripcion.set('');
-      this.monto.set(null);
-      this.categoriaSeleccionada.set(null);
-      this.movimientoEditandoId.set(null);
-      this.errorCarga.set('');
-      this.mostrarFormulario.set(false);
-      this.mostrarConfirmacion(
-        id === null ? 'Movimiento guardado correctamente.' : 'Movimiento actualizado correctamente.'
-      );
-    },
-    error: (error) => {
-      console.error('Error al guardar el movimiento:', error);
-      this.errorCarga.set('No se pudo guardar el movimiento.');
-    }
-  });
-}
-
-
-
-
-protected eliminarMovimiento(id: number): void {
-  const confirmar = confirm(
-    '¿Estás seguro de que deseas eliminar este movimiento?'
-  );
-
-  if (!confirmar) {
-    return;
-  }
-
-  this.servicioMovimientos.eliminarMovimiento(id).subscribe({
-    next: () => {
-      const movimientoEliminado = this.movimientos().find(
-        movimiento => movimiento.id === id
-      );
-
-      if (!movimientoEliminado) {
-        return;
-      }
-
-      this.movimientos.update(lista =>
-        lista.filter(movimiento => movimiento.id !== id)
-      );
-
-      this.mostrarConfirmacion('Movimiento eliminado correctamente.');
-    },
-    error: (error) => {
-      console.error('Error al eliminar movimiento:', error);
-      this.errorCarga.set('No se pudo eliminar el movimiento.');
-    }
-  });
-}
 
   private mostrarConfirmacion(mensaje: string): void {
+    clearTimeout(this.temporizadorConfirmacion);
     this.confirmacion.set(mensaje);
-    setTimeout(() => this.confirmacion.set(''), 3500);
+    this.temporizadorConfirmacion = setTimeout(() => this.confirmacion.set(''), 3000);
   }
-
-
-private cargarCategorias(): void {
-  this.cargandoCategorias.set(true);
-
-  this.servicioCategorias.obtenerCategorias()
-    .pipe(
-      reintentoTransitorio(),
-      finalize(() => this.cargandoCategorias.set(false))
-    )
-    .subscribe({
-    next: (datos: Categoria[]) => {
-      this.categorias.set(datos);
-    },
-    error: (error: HttpErrorResponse) => {
-      console.error('Error al cargar categorias:', error);
-      this.errorCarga.set(
-        error.status === 401
-          ? 'La sesión expiró. Cierra sesión y vuelve a entrar.'
-          : 'No se pudieron cargar las categorías. Pulsa Reintentar.'
-      );
-    }
-  });
-}
-
-
 }

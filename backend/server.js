@@ -44,7 +44,7 @@ app.use(cors({
   }
 }));
 
-app.use(express.json());
+app.use(express.json({ limit: '10kb' }));
 
 app.get('/', (req, res) => {
   res.send('Mi Finanzas: backend funcionando correctamente');
@@ -127,7 +127,7 @@ app.post('/api/auth/login', limitadorLogin, async (req, res) => {
     );
     const usuario = usuarios[0];
 
-    if (!usuario || !verifyPassword(password, usuario.password_hash)) {
+    if (!usuario || !await verifyPassword(password, usuario.password_hash)) {
       return res.status(401).json({ mensaje: 'Correo o contraseña incorrectos' });
     }
 
@@ -197,13 +197,13 @@ app.put('/api/auth/password', requireAuth, requireCsrfForMutation, async (req, r
       [req.user.id]
     );
 
-    if (usuarios.length === 0 || !verifyPassword(currentPassword, usuarios[0].password_hash)) {
+    if (usuarios.length === 0 || !await verifyPassword(currentPassword, usuarios[0].password_hash)) {
       return res.status(401).json({ mensaje: 'La contraseña actual no es correcta' });
     }
 
     await pool.execute(
       'UPDATE usuarios SET password_hash = ? WHERE id = ?',
-      [hashPassword(newPassword), req.user.id]
+      [await hashPassword(newPassword), req.user.id]
     );
 
     res.json({ mensaje: 'Contraseña actualizada correctamente' });
@@ -264,9 +264,7 @@ app.get('/api/movimientos', async (req, res) => {
 
 app.get('/api/categorias', async (req, res) => {
   try {
-    await asegurarCategoriasIniciales(pool, req.user.id);
-
-    const [categorias] = await pool.query(`
+    const consultarCategorias = () => pool.query(`
       SELECT
         id,
         nombre,
@@ -278,6 +276,13 @@ app.get('/api/categorias', async (req, res) => {
         AND activa = TRUE
       ORDER BY nombre ASC
     `, [req.user.id]);
+
+    let [categorias] = await consultarCategorias();
+
+    // Solo en el caso raro de lista vacía se consulta si hay que crear las iniciales.
+    if (categorias.length === 0 && await asegurarCategoriasIniciales(pool, req.user.id)) {
+      [categorias] = await consultarCategorias();
+    }
 
     res.json(categorias);
   } catch (error) {

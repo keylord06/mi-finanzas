@@ -1,448 +1,570 @@
-@if (autenticado()) {
-<div class="dashboard">
-  <header class="encabezado">
-    <div>
-      <p class="subtitulo">FINANZAS PERSONALES</p>
-      <h1>Mi Finanzas</h1>
-    </div>
+@if (verificandoSesion()) {
+  <main class="pantalla-carga" aria-busy="true">
+    <img src="icons/mi-finanzas-icon.svg" alt="" width="64" height="64" />
+    <p>Cargando tus finanzas…</p>
+  </main>
+} @else if (autenticado()) {
+  <div class="app">
+    <header class="barra">
+      <div class="barra-contenido">
+        <div class="marca">
+          <img src="icons/mi-finanzas-icon.svg" alt="" width="36" height="36" />
+          <div>
+            <span class="eyebrow">Finanzas personales</span>
+            <h1>Mi Finanzas</h1>
+          </div>
+        </div>
 
-    <div class="cuenta">
-      <button
-        class="avatar"
-        type="button"
-        aria-label="Abrir menú de cuenta"
-        aria-haspopup="menu"
-        [attr.aria-expanded]="mostrarMenuCuenta()"
-        (click)="mostrarMenuCuenta.update(valor => !valor)"
-      >
-        K
-      </button>
+        <div class="barra-acciones">
+          <button class="boton boton-primario solo-escritorio" type="button" (click)="abrirFormulario()">
+            <span aria-hidden="true">+</span> Nuevo movimiento
+          </button>
 
-      @if (mostrarMenuCuenta()) {
-        <div class="menu-cuenta" role="menu">
-          <button
-            type="button"
-            role="menuitem"
-            (click)="mostrarSeguridad.set(true); mostrarMenuCuenta.set(false)"
-          >
-            Seguridad de la cuenta
-          </button>
-          <button type="button" role="menuitem" (click)="cerrarSesion()">
-            Cerrar sesión
-          </button>
+          <div class="cuenta">
+            <button
+              class="avatar"
+              type="button"
+              aria-label="Abrir menú de cuenta"
+              aria-haspopup="menu"
+              [attr.aria-expanded]="mostrarMenuCuenta()"
+              (click)="mostrarMenuCuenta.update(valor => !valor)"
+            >
+              {{ inicial() }}
+            </button>
+
+            @if (mostrarMenuCuenta()) {
+              <div class="capa-invisible" (click)="mostrarMenuCuenta.set(false)"></div>
+              <div class="menu-cuenta" role="menu">
+                @if (usuario(); as datos) {
+                  <div class="menu-usuario">
+                    <strong>{{ datos.nombre }}</strong>
+                    <small>{{ datos.correo }}</small>
+                  </div>
+                }
+                <button type="button" role="menuitem" (click)="abrirGestionCategorias()">🏷️ Categorías</button>
+                <button type="button" role="menuitem" (click)="abrirSeguridad()">🔒 Seguridad de la cuenta</button>
+                <button type="button" role="menuitem" class="peligro" (click)="cerrarSesion()">↩︎ Cerrar sesión</button>
+              </div>
+            }
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div class="layout">
+      @if (errorCarga() && !hayCapaConError()) {
+        <div class="aviso aviso-error layout-completo" role="alert">
+          <span>{{ errorCarga() }}</span>
+          <button class="boton boton-suave boton-pequeno" type="button" (click)="reintentarCarga()">Reintentar</button>
         </div>
       }
-    </div>
-  </header>
 
-  <main>
-    @if (errorCarga()) {
-      <p class="mensaje-error" role="alert" aria-live="polite">{{ errorCarga() }}</p>
-    }
+      <aside class="panel-lateral">
+        <section class="tarjeta-balance" aria-label="Resumen">
+          <span class="balance-etiqueta">Balance {{ etiquetaPeriodo() }}</span>
+          @if (cargandoMovimientos()) {
+            <span class="esqueleto esqueleto-cifra"></span>
+          } @else {
+            <p class="balance-cifra" [class.negativo]="balance() < 0">
+              {{ balance() | currency:'CRC':'symbol-narrow':formato(balance()):'es-CR' }}
+            </p>
+          }
+
+          <div class="balance-detalle">
+            <div>
+              <span class="punto punto-ingreso"></span>
+              <span>Ingresos</span>
+              <strong>{{ ingresos() | currency:'CRC':'symbol-narrow':'1.0-0':'es-CR' }}</strong>
+            </div>
+            <div>
+              <span class="punto punto-gasto"></span>
+              <span>Gastos</span>
+              <strong>{{ gastos() | currency:'CRC':'symbol-narrow':'1.0-0':'es-CR' }}</strong>
+            </div>
+          </div>
+
+          @if (porcentajeGastado(); as porcentaje) {
+            <div class="progreso" role="img" [attr.aria-label]="'Has gastado el ' + porcentaje + '% de tus ingresos'">
+              <span [style.width.%]="porcentaje > 100 ? 100 : porcentaje" [class.excedido]="porcentaje > 100"></span>
+            </div>
+            <small class="progreso-texto">Has gastado el {{ porcentaje }}% de tus ingresos</small>
+          }
+        </section>
+
+        <section class="tarjeta">
+          <h2 class="tarjeta-titulo">Gastos por categoría</h2>
+          @for (gasto of gastosPorCategoria(); track gasto.id) {
+            <div class="gasto-categoria">
+              <span class="icono-categoria" [style.--color]="gasto.color">{{ iconoDe(gasto.icono) }}</span>
+              <div class="gasto-info">
+                <div class="gasto-fila">
+                  <span>{{ gasto.nombre }}</span>
+                  <strong>{{ gasto.total | currency:'CRC':'symbol-narrow':'1.0-0':'es-CR' }}</strong>
+                </div>
+                <div class="barra-categoria">
+                  <span [style.width.%]="gasto.porcentaje" [style.background]="gasto.color"></span>
+                </div>
+              </div>
+              <small class="gasto-porcentaje">{{ gasto.porcentaje }}%</small>
+            </div>
+          } @empty {
+            <p class="texto-suave">Sin gastos en este periodo.</p>
+          }
+        </section>
+      </aside>
+
+      <section class="panel-principal" aria-labelledby="titulo-movimientos">
+        <div class="controles">
+          <div class="segmentado" role="group" aria-label="Periodo">
+            @for (periodo of periodos; track periodo.valor) {
+              <button
+                type="button"
+                [class.activo]="periodoActivo() === periodo.valor"
+                [attr.aria-pressed]="periodoActivo() === periodo.valor"
+                (click)="seleccionarPeriodo(periodo.valor)"
+              >
+                {{ periodo.etiqueta }}
+              </button>
+            }
+          </div>
+
+          <div class="busqueda">
+            <span class="busqueda-icono" aria-hidden="true">⌕</span>
+            <input
+              type="search"
+              placeholder="Buscar movimiento"
+              aria-label="Buscar movimiento"
+              autocomplete="off"
+              enterkeyhint="search"
+              [value]="busqueda()"
+              (input)="busqueda.set($any($event.target).value)"
+            />
+            <button
+              class="boton-filtros"
+              type="button"
+              [class.activo]="mostrarFiltros() || filtrosActivos() > 0"
+              [attr.aria-expanded]="mostrarFiltros()"
+              (click)="mostrarFiltros.update(valor => !valor)"
+            >
+              Filtros
+              @if (filtrosActivos() > 0) {
+                <span class="insignia">{{ filtrosActivos() }}</span>
+              }
+            </button>
+          </div>
+
+          @if (mostrarFiltros()) {
+            <div class="filtros">
+              <label>
+                <span>Tipo</span>
+                <select [value]="tipoFiltro()" (change)="tipoFiltro.set($any($event.target).value)">
+                  <option value="TODOS">Todos</option>
+                  <option value="INGRESO">Ingresos</option>
+                  <option value="GASTO">Gastos</option>
+                </select>
+              </label>
+
+              <label>
+                <span>Categoría</span>
+                <select [value]="categoriaFiltro() ?? ''" (change)="actualizarCategoriaFiltro($any($event.target).value)">
+                  <option value="">Todas</option>
+                  @for (categoria of categorias(); track categoria.id) {
+                    <option [value]="categoria.id">{{ categoria.nombre }}</option>
+                  }
+                </select>
+              </label>
+
+              <label>
+                <span>Desde</span>
+                <input type="date" [value]="fechaDesde()" (change)="fechaDesde.set($any($event.target).value)" />
+              </label>
+
+              <label>
+                <span>Hasta</span>
+                <input type="date" [value]="fechaHasta()" (change)="fechaHasta.set($any($event.target).value)" />
+              </label>
+
+              <button class="boton boton-suave filtros-limpiar" type="button" (click)="limpiarFiltros()">
+                Limpiar filtros
+              </button>
+            </div>
+          }
+        </div>
+
+        <div class="titulo-seccion">
+          <h2 id="titulo-movimientos">Movimientos</h2>
+          <span>{{ movimientosFiltrados().length }} {{ movimientosFiltrados().length === 1 ? 'registro' : 'registros' }}</span>
+        </div>
+
+        @if (cargandoMovimientos() && movimientos().length === 0) {
+          <div class="lista" aria-busy="true" aria-label="Cargando movimientos">
+            @for (fila of [1, 2, 3, 4]; track fila) {
+              <div class="movimiento esqueleto-fila">
+                <span class="esqueleto esqueleto-icono"></span>
+                <span class="esqueleto esqueleto-texto"></span>
+              </div>
+            }
+          </div>
+        } @else {
+          @for (grupo of grupos(); track grupo.dia) {
+            <section class="grupo-dia">
+              <header>
+                <h3>{{ grupo.etiqueta }}</h3>
+                <span [class.positivo]="grupo.total > 0">
+                  {{ grupo.total > 0 ? '+' : '' }}{{ grupo.total | currency:'CRC':'symbol-narrow':formato(grupo.total):'es-CR' }}
+                </span>
+              </header>
+
+              <ul class="lista">
+                @for (movimiento of grupo.movimientos; track movimiento.id) {
+                  @let categoria = categoriaDe(movimiento.categoria_id);
+                  <li>
+                    <button
+                      class="movimiento"
+                      type="button"
+                      [attr.aria-label]="'Editar ' + movimiento.descripcion"
+                      (click)="editarMovimiento(movimiento.id)"
+                    >
+                      <span class="icono-categoria" [style.--color]="categoria?.color ?? '#64748B'">
+                        {{ iconoDe(categoria?.icono) }}
+                      </span>
+                      <span class="movimiento-detalle">
+                        <strong>{{ movimiento.descripcion }}</strong>
+                        <small>
+                          {{ categoria?.nombre ?? 'Sin categoría' }} ·
+                          {{ movimiento.fecha | date:'h:mm a':zonaCR:'es-CR' }}
+                        </small>
+                      </span>
+                      <span class="monto" [class.positivo]="movimiento.tipo === 'INGRESO'">
+                        {{ movimiento.tipo === 'INGRESO' ? '+' : '−' }}{{ movimiento.monto | currency:'CRC':'symbol-narrow':formato(movimiento.monto):'es-CR' }}
+                      </span>
+                    </button>
+                  </li>
+                }
+              </ul>
+            </section>
+          } @empty {
+            <div class="estado-vacio">
+              @if (movimientos().length === 0) {
+                <span class="estado-vacio-icono" aria-hidden="true">🌱</span>
+                <h3>Aún no tienes movimientos</h3>
+                <p>Registra tu primer ingreso o gasto para empezar.</p>
+                <button class="boton boton-primario" type="button" (click)="abrirFormulario()">Agregar movimiento</button>
+              } @else {
+                <span class="estado-vacio-icono" aria-hidden="true">🔍</span>
+                <h3>Sin resultados</h3>
+                <p>No hay movimientos que coincidan con los filtros.</p>
+                <button class="boton boton-suave" type="button" (click)="limpiarFiltros()">Limpiar filtros</button>
+              }
+            </div>
+          }
+        }
+      </section>
+    </div>
+
+    <button class="fab solo-movil" type="button" aria-label="Agregar movimiento" (click)="abrirFormulario()">+</button>
 
     @if (confirmacion()) {
-      <p class="mensaje-exito" role="status" aria-live="polite">{{ confirmacion() }}</p>
+      <div class="toast" role="status" aria-live="polite">✓ {{ confirmacion() }}</div>
     }
+  </div>
 
-    @if (!cargandoCategorias() && categorias().length === 0) {
-      <button class="boton-cancelar" type="button" (click)="reintentarCarga()">
-        Reintentar carga de categorías
-      </button>
-    }
+  @if (mostrarFormulario()) {
+    <div class="modal-fondo" (click)="cerrarFormulario()">
+      <section
+        class="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="titulo-formulario"
+        (click)="$event.stopPropagation()"
+      >
+        <div class="asa" aria-hidden="true"></div>
+        <header class="modal-encabezado">
+          <h2 id="titulo-formulario">{{ movimientoEditandoId() !== null ? 'Editar movimiento' : 'Nuevo movimiento' }}</h2>
+          <button class="boton-cerrar" type="button" aria-label="Cerrar" (click)="cerrarFormulario()">×</button>
+        </header>
 
-    <section class="tarjeta-principal">
-      <p>Balance disponible</p>
-      <h2>{{ balance() | currency:'CRC':'symbol':'1.2-2':'es-CR' }}</h2>
-      <p class="descripcion">Resumen de tus finanzas</p>
-    </section>
+        <form class="modal-cuerpo" (submit)="$event.preventDefault(); guardarMovimiento()">
+          <div class="segmentado segmentado-tipo" role="group" aria-label="Tipo de movimiento">
+            <button
+              type="button"
+              class="gasto"
+              [class.activo]="tipoMovimiento() === 'GASTO'"
+              [attr.aria-pressed]="tipoMovimiento() === 'GASTO'"
+              (click)="cambiarTipoMovimiento('GASTO')"
+            >
+              Gasto
+            </button>
+            <button
+              type="button"
+              class="ingreso"
+              [class.activo]="tipoMovimiento() === 'INGRESO'"
+              [attr.aria-pressed]="tipoMovimiento() === 'INGRESO'"
+              (click)="cambiarTipoMovimiento('INGRESO')"
+            >
+              Ingreso
+            </button>
+          </div>
 
-    <section class="resumen">
-      <article class="tarjeta ingreso">
-        <p>Ingresos</p>
-        <h3>{{ ingresosFiltrados() | currency:'CRC':'symbol':'1.0-0':'es-CR' }}</h3>
-      </article>
+          <label class="campo-monto">
+            <span class="campo-etiqueta">Monto</span>
+            <span class="monto-entrada" [class.ingreso]="tipoMovimiento() === 'INGRESO'">
+              <span aria-hidden="true">₡</span>
+              <input
+                type="text"
+                inputmode="decimal"
+                placeholder="0"
+                autocomplete="off"
+                enterkeyhint="next"
+                [value]="monto() ?? ''"
+                (input)="actualizarMonto($any($event.target).value)"
+              />
+            </span>
+          </label>
 
-      <article class="tarjeta gasto">
-        <p>Gastos</p>
-        <h3>{{ gastosFiltrados() | currency:'CRC':'symbol':'1.0-0':'es-CR' }}</h3>
-      </article>
-    </section>
+          <label class="campo">
+            <span class="campo-etiqueta">Descripción</span>
+            <input
+              type="text"
+              placeholder="Ej. Supermercado"
+              autocomplete="off"
+              autocapitalize="sentences"
+              maxlength="255"
+              enterkeyhint="done"
+              [value]="descripcion()"
+              (input)="descripcion.set($any($event.target).value)"
+            />
+          </label>
 
-    <button class="boton-secundario boton-seccion" type="button" [attr.aria-expanded]="mostrarResumenGrafico()" (click)="alternarResumenGrafico()">
-      {{ mostrarResumenGrafico() ? 'Ocultar resumen gráfico' : 'Ver resumen gráfico' }}
-    </button>
+          <fieldset class="campo">
+            <legend class="campo-etiqueta">Categoría</legend>
+            @if (cargandoCategorias() && categorias().length === 0) {
+              <p class="texto-suave">Cargando categorías…</p>
+            } @else {
+              <div class="fichas">
+                @for (categoria of categoriasDelTipo(); track categoria.id) {
+                  <button
+                    type="button"
+                    class="ficha"
+                    [style.--color]="categoria.color"
+                    [class.activo]="categoriaSeleccionada() === categoria.id"
+                    [attr.aria-pressed]="categoriaSeleccionada() === categoria.id"
+                    (click)="categoriaSeleccionada.set(categoria.id)"
+                  >
+                    <span aria-hidden="true">{{ iconoDe(categoria.icono) }}</span>
+                    {{ categoria.nombre }}
+                  </button>
+                } @empty {
+                  <p class="texto-suave">
+                    No tienes categorías de este tipo.
+                    <button class="enlace" type="button" (click)="cerrarFormulario(); abrirGestionCategorias()">Crear una</button>
+                  </p>
+                }
+              </div>
+            }
+          </fieldset>
 
-    @if (mostrarResumenGrafico()) {
-      <section class="seccion-graficos">
-        <h2>Resumen de finanzas</h2>
-        <div class="contenedor-grafico">
-          <canvas #graficoFinanzas></canvas>
+          @if (errorFormulario()) {
+            <p class="aviso aviso-error" role="alert">{{ errorFormulario() }}</p>
+          }
+
+          <div class="modal-acciones">
+            @if (movimientoEditandoId(); as id) {
+              <button class="boton boton-peligro" type="button" [disabled]="guardando()" (click)="eliminarMovimiento(id)">
+                Eliminar
+              </button>
+            }
+            <button class="boton boton-primario boton-ancho" type="submit" [disabled]="guardando()">
+              {{ guardando() ? 'Guardando…' : movimientoEditandoId() !== null ? 'Guardar cambios' : 'Guardar movimiento' }}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  }
+
+  @if (mostrarGestionCategorias()) {
+    <div class="modal-fondo" (click)="mostrarGestionCategorias.set(false)">
+      <section
+        class="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="titulo-categorias"
+        (click)="$event.stopPropagation()"
+      >
+        <div class="asa" aria-hidden="true"></div>
+        <header class="modal-encabezado">
+          <h2 id="titulo-categorias">Categorías</h2>
+          <button class="boton-cerrar" type="button" aria-label="Cerrar" (click)="mostrarGestionCategorias.set(false)">×</button>
+        </header>
+
+        <div class="modal-cuerpo">
+          <ul class="lista lista-categorias">
+            @for (categoria of categorias(); track categoria.id) {
+              <li class="categoria-item" [class.editando]="categoriaEditandoId() === categoria.id">
+                <span class="icono-categoria" [style.--color]="categoria.color">{{ iconoDe(categoria.icono) }}</span>
+                <span class="movimiento-detalle">
+                  <strong>{{ categoria.nombre }}</strong>
+                  <small>{{ categoria.tipo === 'INGRESO' ? 'Ingreso' : 'Gasto' }}</small>
+                </span>
+                <button class="boton boton-suave boton-pequeno" type="button" (click)="editarCategoria(categoria.id)">Editar</button>
+                <button
+                  class="boton-icono"
+                  type="button"
+                  [attr.aria-label]="'Desactivar ' + categoria.nombre"
+                  (click)="eliminarCategoria(categoria.id)"
+                >
+                  🗑
+                </button>
+              </li>
+            } @empty {
+              <li class="texto-suave">Todavía no tienes categorías activas.</li>
+            }
+          </ul>
+
+          <form class="categoria-formulario" (submit)="$event.preventDefault(); guardarCategoria()">
+            <h3>{{ categoriaEditandoId() === null ? 'Nueva categoría' : 'Editar categoría' }}</h3>
+
+            <label class="campo">
+              <span class="campo-etiqueta">Nombre</span>
+              <input
+                type="text"
+                maxlength="80"
+                autocomplete="off"
+                [value]="nombreCategoria()"
+                (input)="nombreCategoria.set($any($event.target).value)"
+              />
+            </label>
+
+            <div class="segmentado" role="group" aria-label="Tipo de categoría">
+              <button type="button" [class.activo]="tipoCategoria() === 'GASTO'" (click)="tipoCategoria.set('GASTO')">Gasto</button>
+              <button type="button" [class.activo]="tipoCategoria() === 'INGRESO'" (click)="tipoCategoria.set('INGRESO')">Ingreso</button>
+            </div>
+
+            <fieldset class="campo">
+              <legend class="campo-etiqueta">Icono y color</legend>
+              <div class="selector-iconos">
+                @for (icono of iconosDisponibles; track icono) {
+                  <button
+                    type="button"
+                    [class.activo]="iconoCategoria() === icono"
+                    [style.--color]="colorCategoria()"
+                    [attr.aria-pressed]="iconoCategoria() === icono"
+                    (click)="iconoCategoria.set(icono)"
+                  >
+                    {{ iconos[icono] }}
+                  </button>
+                }
+                <label class="selector-color" [style.background]="colorCategoria()">
+                  <span class="solo-lectores">Color</span>
+                  <input type="color" [value]="colorCategoria()" (input)="colorCategoria.set($any($event.target).value)" />
+                </label>
+              </div>
+            </fieldset>
+
+            @if (errorCarga()) {
+              <p class="aviso aviso-error" role="alert">{{ errorCarga() }}</p>
+            }
+
+            <div class="modal-acciones">
+              @if (categoriaEditandoId() !== null) {
+                <button class="boton boton-suave" type="button" (click)="cancelarCategoria()">Cancelar</button>
+              }
+              <button class="boton boton-primario boton-ancho" type="submit" [disabled]="guardando()">
+                {{ categoriaEditandoId() === null ? 'Crear categoría' : 'Guardar cambios' }}
+              </button>
+            </div>
+          </form>
         </div>
       </section>
-    }
-
-    
-<button class="boton-secundario boton-seccion" type="button" [attr.aria-expanded]="mostrarFiltros()" (click)="mostrarFiltros.update(valor => !valor)">
-  {{ mostrarFiltros() ? 'Ocultar filtros' : 'Filtrar movimientos' }}
-</button>
-
-@if (mostrarFiltros()) {
-<section class="filtros" aria-label="Filtros de movimientos">
-  <div class="filtros-encabezado">
-    <div>
-      <p class="eyebrow">CONSULTA</p>
-      <h2>Filtrar movimientos</h2>
     </div>
-    <button class="boton-cancelar boton-pequeno" type="button" (click)="limpiarFiltros()">
-      Limpiar
-    </button>
-  </div>
-
-  <div class="filtros-grid">
-    <label>
-      Buscar descripción
-      <input
-        type="search"
-        autocomplete="off"
-        [value]="busqueda()"
-        (input)="busqueda.set($any($event.target).value)"
-      />
-    </label>
-
-    <label>
-      Tipo
-      <select [value]="tipoFiltro()" (change)="tipoFiltro.set($any($event.target).value)">
-        <option value="TODOS">Todos</option>
-        <option value="INGRESO">Ingresos</option>
-        <option value="GASTO">Gastos</option>
-      </select>
-    </label>
-
-    <label>
-      Categoría
-      <select
-        [value]="categoriaFiltro() ?? ''"
-        (change)="actualizarCategoriaFiltro($any($event.target).value)"
-      >
-        <option value="">Todas</option>
-        @for (categoria of categorias(); track categoria.id) {
-          <option [value]="categoria.id">{{ categoria.nombre }}</option>
-        }
-      </select>
-    </label>
-
-    <label>
-      Desde
-      <input type="date" [value]="fechaDesde()" (change)="fechaDesde.set($any($event.target).value)" />
-    </label>
-
-    <label>
-      Hasta
-      <input type="date" [value]="fechaHasta()" (change)="fechaHasta.set($any($event.target).value)" />
-    </label>
-  </div>
-</section>
-}
-
-<section class="movimientos">
-  <div class="titulo-seccion">
-    <h2>Movimientos recientes</h2>
-    <span>{{ movimientosFiltrados().length }} registros</span>
-  </div>
-
-  @for (movimiento of movimientosFiltrados(); track movimiento.id) {
-    <article class="movimiento">
-      <div class="icono">
-        @if (movimiento.tipo === 'ingreso') {
-          💰
-        } @else {
-          🛒
-        }
-      </div>
-
-      <div class="detalle">
-        <h3>{{ movimiento.descripcion }}</h3>
-        <p>
-          {{ movimiento.fecha | date:'dd/MM/yyyy, HH:mm':'-0600' }} ·
-          {{ etiquetaCategoria(movimiento.categoria_id) }} ·
-          {{ movimiento.tipo === 'ingreso' ? 'Ingreso' : 'Gasto' }}
-        </p>
-      </div>
-
-      @if (movimiento.tipo === 'ingreso') {
-        <strong class="monto-positivo">
-          +{{ movimiento.monto | currency:'CRC':'symbol':'1.2-2':'es-CR' }}
-        </strong>
-      } @else {
-        <strong class="monto-negativo">
-          -{{ movimiento.monto | currency:'CRC':'symbol':'1.2-2':'es-CR' }}
-        </strong>
-      }
-      
-      <button
-        class="boton-editar"
-        type="button"
-        (click)="editarMovimiento(movimiento.id)"
-      >
-        Editar
-      </button>
-
-      
-      <button
-        class="boton-cancelar"
-        type="button"
-        (click)="eliminarMovimiento(movimiento.id)"
-      >
-        Eliminar
-      </button>
-
-    </article>
-  } @empty {
-    <p class="estado-vacio">Aún no tienes movimientos registrados.</p>
-  }
-</section>
-
-<button
-  class="boton-agregar"
-  type="button"
-  (click)="abrirFormulario()"
->
-  + Agregar movimiento
-</button>
-
-<div class="acciones-panel" aria-label="Acciones de configuración">
-  <button
-    class="boton-secundario"
-    type="button"
-    (click)="abrirGestionCategorias()"
-    [attr.aria-expanded]="mostrarGestionCategorias()"
-  >
-    Administrar categorías
-  </button>
-</div>
-
-@if (mostrarGestionCategorias()) {
-  <div class="modal-backdrop" role="presentation" (click)="abrirGestionCategorias()">
-  <section class="gestion-categorias modal-panel" role="dialog" aria-modal="true" aria-labelledby="titulo-categorias" (click)="$event.stopPropagation()">
-    <div class="formulario-encabezado">
-      <div>
-        <p class="eyebrow">CONFIGURACIÓN</p>
-        <h2 id="titulo-categorias">Categorías</h2>
-      </div>
-      <button class="boton-cerrar" type="button" aria-label="Cerrar categorías" (click)="abrirGestionCategorias()">×</button>
-    </div>
-
-    <div class="lista-categorias">
-      @for (categoria of categorias(); track categoria.id) {
-        <article class="categoria-item">
-          <span class="muestra-color" [style.backgroundColor]="categoria.color"></span>
-          <div>
-            <strong>{{ categoria.nombre }}</strong>
-            <small>{{ categoria.tipo === 'INGRESO' ? 'Ingreso' : 'Gasto' }}</small>
-          </div>
-          <button class="boton-editar" type="button" (click)="editarCategoria(categoria.id)">Editar</button>
-          <button class="boton-cancelar" type="button" (click)="eliminarCategoria(categoria.id)">Desactivar</button>
-        </article>
-      } @empty {
-        <p class="estado-vacio">Todavía no tienes categorías activas.</p>
-      }
-    </div>
-
-    <div class="categoria-formulario">
-      <h3>{{ categoriaEditandoId() === null ? 'Nueva categoría' : 'Editar categoría' }}</h3>
-      <label>
-        Nombre
-        <input type="text" autocomplete="off" [value]="nombreCategoria()" (input)="nombreCategoria.set($any($event.target).value)" />
-      </label>
-      <label>
-        Tipo
-        <select [value]="tipoCategoria()" (change)="tipoCategoria.set($any($event.target).value)">
-          <option value="GASTO">Gasto</option>
-          <option value="INGRESO">Ingreso</option>
-        </select>
-      </label>
-      <label>
-        Color
-        <input class="selector-color" type="color" [value]="colorCategoria()" (input)="colorCategoria.set($any($event.target).value)" />
-      </label>
-      <div class="acciones-formulario">
-        <button class="boton-agregar" type="button" (click)="guardarCategoria()">Guardar categoría</button>
-        @if (categoriaEditandoId() !== null) {
-          <button class="boton-cancelar" type="button" (click)="cancelarCategoria()">Cancelar edición</button>
-        }
-      </div>
-    </div>
-  </section>
-  </div>
-}
-
-@if (mostrarSeguridad()) {
-  <div class="modal-backdrop" role="presentation" (click)="mostrarSeguridad.set(false)">
-  <section class="gestion-categorias seguridad modal-panel" role="dialog" aria-modal="true" aria-labelledby="titulo-seguridad" (click)="$event.stopPropagation()">
-    <div class="formulario-encabezado">
-      <div>
-        <p class="eyebrow">CUENTA</p>
-        <h2 id="titulo-seguridad">Cambiar contraseña</h2>
-      </div>
-      <button class="boton-cerrar" type="button" aria-label="Cerrar seguridad" (click)="mostrarSeguridad.set(false)">×</button>
-    </div>
-
-    <label>
-      Contraseña actual
-      <input type="password" autocomplete="current-password" [value]="passwordActual()" (input)="passwordActual.set($any($event.target).value)" />
-    </label>
-    <label>
-      Nueva contraseña
-      <input type="password" autocomplete="new-password" [value]="passwordNueva()" (input)="passwordNueva.set($any($event.target).value)" />
-    </label>
-    <label>
-      Confirmar contraseña
-      <input type="password" autocomplete="new-password" [value]="passwordConfirmacion()" (input)="passwordConfirmacion.set($any($event.target).value)" />
-    </label>
-    <button class="boton-agregar" type="button" (click)="cambiarPassword()">Actualizar contraseña</button>
-  </section>
-  </div>
-}
-
-@if (mostrarFormulario()) {
-  <section class="formulario">
-    <div class="formulario-encabezado">
-      <div>
-        <p class="eyebrow">REGISTRO</p>
-        <h2>{{ movimientoEditandoId() !== null ? 'Editar movimiento' : 'Nuevo movimiento' }}</h2>
-      </div>
-      <button
-        class="boton-cerrar"
-        type="button"
-        aria-label="Cerrar formulario"
-        (click)="mostrarFormulario.set(false)"
-      >
-        ×
-      </button>
-    </div>
-
-    @if (errorCarga()) {
-      <p class="mensaje-error" role="alert" aria-live="polite">{{ errorCarga() }}</p>
-    }
-
-    <label for="tipo">Tipo de movimiento</label>
-    <select
-      id="tipo"
-      [value]="tipoMovimiento()"
-      (change)="tipoMovimiento.set($any($event.target).value)"
-    >
-      <option value="gasto">Gasto</option>
-      <option value="ingreso">Ingreso</option>
-    
-</select>
-
-<label for="categoria">Categoría</label>
-<select
-  id="categoria"
-  [disabled]="cargandoCategorias() || categorias().length === 0"
-  [value]="categoriaSeleccionada() ?? ''"
-  (change)="actualizarCategoria($any($event.target).value)"
->
-  <option value="">Selecciona una categoría</option>
-
-  @if (cargandoCategorias()) {
-    <option value="" disabled>Cargando categorías...</option>
-  } @else if (categorias().length === 0) {
-    <option value="" disabled>No hay categorías disponibles</option>
   }
 
-  @for (categoria of categorias(); track categoria.id) {
-    @if (
-      (tipoMovimiento() === 'ingreso' && categoria.tipo === 'INGRESO') ||
-      (tipoMovimiento() === 'gasto' && categoria.tipo === 'GASTO')
-    ) {
-      <option [value]="categoria.id">
-        {{ categoria.nombre }}
-      </option>
-    }
+  @if (mostrarSeguridad()) {
+    <div class="modal-fondo" (click)="mostrarSeguridad.set(false)">
+      <section
+        class="modal modal-estrecho"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="titulo-seguridad"
+        (click)="$event.stopPropagation()"
+      >
+        <div class="asa" aria-hidden="true"></div>
+        <header class="modal-encabezado">
+          <h2 id="titulo-seguridad">Cambiar contraseña</h2>
+          <button class="boton-cerrar" type="button" aria-label="Cerrar" (click)="mostrarSeguridad.set(false)">×</button>
+        </header>
+
+        <form class="modal-cuerpo" (submit)="$event.preventDefault(); cambiarPassword()">
+          <label class="campo">
+            <span class="campo-etiqueta">Contraseña actual</span>
+            <input type="password" autocomplete="current-password" [value]="passwordActual()" (input)="passwordActual.set($any($event.target).value)" />
+          </label>
+          <label class="campo">
+            <span class="campo-etiqueta">Nueva contraseña</span>
+            <input type="password" autocomplete="new-password" minlength="12" [value]="passwordNueva()" (input)="passwordNueva.set($any($event.target).value)" />
+            <small class="texto-suave">Mínimo 12 caracteres.</small>
+          </label>
+          <label class="campo">
+            <span class="campo-etiqueta">Confirmar contraseña</span>
+            <input type="password" autocomplete="new-password" [value]="passwordConfirmacion()" (input)="passwordConfirmacion.set($any($event.target).value)" />
+          </label>
+
+          @if (errorCarga()) {
+            <p class="aviso aviso-error" role="alert">{{ errorCarga() }}</p>
+          }
+
+          <button class="boton boton-primario boton-ancho" type="submit" [disabled]="guardando()">
+            {{ guardando() ? 'Actualizando…' : 'Actualizar contraseña' }}
+          </button>
+        </form>
+      </section>
+    </div>
   }
-</select>
-
-<label for="descripcion">Descripción</label>
-<input
-  id="descripcion"
-  type="text"
-  autocomplete="off"
-  required
-  [value]="descripcion()"
-  (input)="descripcion.set($any($event.target).value)"
-/>
-
-
-    <label for="monto">Monto en colones</label>
-    <input
-      id="monto"
-      type="number"
-      min="0.01"
-      step="0.01"
-      inputmode="decimal"
-      autocomplete="off"
-      required
-      [value]="monto() ?? ''"
-      (input)="actualizarMonto($any($event.target).value)"
-    />
-
-    <button
-      class="boton-agregar"
-      type="button"
-      (click)="guardarMovimiento()"
-    >
-    {{ movimientoEditandoId() !== null ? 'Actualizar movimiento' : 'Guardar movimiento' }}
-    </button>
-
-    <button
-      class="boton-cancelar"
-      type="button"
-      (click)="mostrarFormulario.set(false)"
-    >
-      Cancelar
-    </button>
-  </section>
-}
-
-  </main>
-</div>
 } @else {
   <main class="pantalla-login">
     <section class="login-panel" aria-labelledby="titulo-login">
-      <p class="subtitulo">FINANZAS PERSONALES</p>
+      <img class="login-logo" src="icons/mi-finanzas-icon.svg" alt="" width="56" height="56" />
       <h1 id="titulo-login">Mi Finanzas</h1>
-      <p>Inicia sesión para consultar tus movimientos.</p>
+      <p class="texto-suave">Inicia sesión para ver tus movimientos.</p>
 
       <form (submit)="$event.preventDefault(); iniciarSesion()">
-        <label for="correo">Correo</label>
-        <input
-          id="correo"
-          type="email"
-          autocomplete="email"
-          required
-          [value]="correo()"
-          (input)="correo.set($any($event.target).value)"
-        />
+        <label class="campo">
+          <span class="campo-etiqueta">Correo</span>
+          <input
+            type="email"
+            autocomplete="email"
+            autocapitalize="off"
+            inputmode="email"
+            required
+            [value]="correo()"
+            (input)="correo.set($any($event.target).value)"
+          />
+        </label>
 
-        <label for="password">Contraseña</label>
-        <input
-          id="password"
-          type="password"
-          autocomplete="current-password"
-          required
-          [value]="password()"
-          (input)="password.set($any($event.target).value)"
-        />
+        <label class="campo">
+          <span class="campo-etiqueta">Contraseña</span>
+          <input
+            type="password"
+            autocomplete="current-password"
+            required
+            [value]="password()"
+            (input)="password.set($any($event.target).value)"
+          />
+        </label>
 
         @if (errorSesion()) {
-          <p class="mensaje-error" role="alert">{{ errorSesion() }}</p>
+          <p class="aviso aviso-error" role="alert">{{ errorSesion() }}</p>
         }
 
-        <button class="boton-agregar" type="submit">Iniciar sesión</button>
+        <button class="boton boton-primario boton-ancho" type="submit" [disabled]="iniciandoSesion()">
+          {{ iniciandoSesion() ? 'Entrando…' : 'Iniciar sesión' }}
+        </button>
+
+        @if (iniciandoSesion()) {
+          <small class="texto-suave login-nota">Si el servidor estaba en reposo, puede tardar hasta un minuto.</small>
+        }
       </form>
     </section>
   </main>
 }
-
-<router-outlet />

@@ -15,16 +15,51 @@ interface LoginResponse {
   sessionToken: string;
 }
 
+const CLAVE_CSRF = 'mi_finanzas_csrf';
+const CLAVE_SESION = 'mi_finanzas_session_token';
+
+// localStorage para que la sesión sobreviva al cerrar la app instalada en iPhone;
+// el token expira igualmente en el servidor.
+function leer(clave: string): string | null {
+  try {
+    return localStorage.getItem(clave);
+  } catch {
+    return null;
+  }
+}
+
+function escribir(clave: string, valor: string | null): void {
+  try {
+    if (valor === null) {
+      localStorage.removeItem(clave);
+    } else {
+      localStorage.setItem(clave, valor);
+    }
+  } catch {
+    // Almacenamiento no disponible (modo privado): la sesión dura lo que la pestaña.
+  }
+}
+
 @Injectable({ providedIn: 'root' })
 export class Auth {
   private http = inject(HttpClient);
   private apiUrl = `${environment.apiUrl}/auth`;
   readonly usuario = signal<Usuario | null>(null);
 
+  tieneSesionGuardada(): boolean {
+    return leer(CLAVE_SESION) !== null;
+  }
+
+  limpiarSesionLocal(): void {
+    escribir(CLAVE_CSRF, null);
+    escribir(CLAVE_SESION, null);
+    this.usuario.set(null);
+  }
+
   opcionesAutenticacion(): { withCredentials: true; headers?: HttpHeaders } {
     const headers: Record<string, string> = {};
-    const csrfToken = sessionStorage.getItem('mi_finanzas_csrf');
-    const sessionToken = sessionStorage.getItem('mi_finanzas_session_token');
+    const csrfToken = leer(CLAVE_CSRF);
+    const sessionToken = leer(CLAVE_SESION);
 
     if (csrfToken) {
       headers['X-CSRF-Token'] = csrfToken;
@@ -47,8 +82,8 @@ export class Auth {
       { withCredentials: true }
     ).pipe(
       tap(respuesta => {
-        sessionStorage.setItem('mi_finanzas_csrf', respuesta.csrfToken);
-        sessionStorage.setItem('mi_finanzas_session_token', respuesta.sessionToken);
+        escribir(CLAVE_CSRF, respuesta.csrfToken);
+        escribir(CLAVE_SESION, respuesta.sessionToken);
         this.usuario.set(respuesta.usuario);
       })
     );
@@ -77,11 +112,7 @@ export class Auth {
       {},
       this.opcionesAutenticacion()
     ).pipe(
-      tap(() => {
-        sessionStorage.removeItem('mi_finanzas_csrf');
-        sessionStorage.removeItem('mi_finanzas_session_token');
-        this.usuario.set(null);
-      })
+      tap(() => this.limpiarSesionLocal())
     );
   }
 }

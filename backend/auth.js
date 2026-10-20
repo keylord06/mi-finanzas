@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const util = require('util');
 
 const SESSION_COOKIE = 'mi_finanzas_session';
 const CSRF_COOKIE = 'mi_finanzas_csrf';
@@ -17,22 +18,24 @@ function getSessionSecret() {
   return 'development-only-session-secret-change-me';
 }
 
-function hashPassword(password) {
+// Versión asíncrona: scrypt corre en el pool de hilos y no bloquea otras peticiones.
+const scrypt = util.promisify(crypto.scrypt);
+
+async function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.scryptSync(password, salt, SCRYPT_KEY_LENGTH).toString('hex');
+  const hash = (await scrypt(password, salt, SCRYPT_KEY_LENGTH)).toString('hex');
   return `scrypt:${salt}:${hash}`;
 }
 
-function verifyPassword(password, storedHash) {
+async function verifyPassword(password, storedHash) {
   const [algorithm, salt, expectedHash] = storedHash.split(':');
 
   if (algorithm !== 'scrypt' || !salt || !expectedHash) {
     return false;
   }
 
-  const actualHash = crypto.scryptSync(password, salt, SCRYPT_KEY_LENGTH).toString('hex');
+  const actualBuffer = await scrypt(password, salt, SCRYPT_KEY_LENGTH);
   const expectedBuffer = Buffer.from(expectedHash, 'hex');
-  const actualBuffer = Buffer.from(actualHash, 'hex');
 
   return expectedBuffer.length === actualBuffer.length &&
     crypto.timingSafeEqual(expectedBuffer, actualBuffer);

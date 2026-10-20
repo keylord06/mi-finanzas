@@ -78,7 +78,7 @@ async function main() {
   const [resultado] = await pool.execute(
     `INSERT INTO usuarios (nombre, correo, password_hash)
      VALUES (?, ?, ?)`,
-    [nombre, correo, hashPassword(password)]
+    [nombre, correo, await hashPassword(password)]
   );
 
   await asegurarCategoriasIniciales(pool, resultado.insertId);

@@ -13,11 +13,11 @@ describe('Categorias', () => {
     });
     service = TestBed.inject(Categorias);
     http = TestBed.inject(HttpTestingController);
-    sessionStorage.setItem('mi_finanzas_session_token', 'session-test');
+    localStorage.setItem('mi_finanzas_session_token', 'session-test');
   });
 
   afterEach(() => {
-    sessionStorage.clear();
+    localStorage.clear();
     http.verify();
   });
 

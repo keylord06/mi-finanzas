@@ -16,7 +16,7 @@ describe('Auth', () => {
   });
 
   afterEach(() => {
-    sessionStorage.clear();
+    localStorage.clear();
     http.verify();
   });
 
@@ -32,7 +32,7 @@ describe('Auth', () => {
       sessionToken: 'session-test'
     });
 
-    expect(sessionStorage.getItem('mi_finanzas_csrf')).toBe('csrf-test');
-    expect(sessionStorage.getItem('mi_finanzas_session_token')).toBe('session-test');
+    expect(localStorage.getItem('mi_finanzas_csrf')).toBe('csrf-test');
+    expect(localStorage.getItem('mi_finanzas_session_token')).toBe('session-test');
   });
 });
