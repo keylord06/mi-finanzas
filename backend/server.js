@@ -5,12 +5,14 @@ const cors = require('cors');
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const pool = require('./db');
+const { asegurarCategoriasIniciales } = require('./categorias-iniciales');
 const {
   CSRF_COOKIE,
   SESSION_COOKIE,
   SESSION_DURATION_SECONDS,
   createCsrfToken,
   createSessionToken,
+  hashPassword,
   parseCookies,
   verifyPassword,
   verifySessionToken
@@ -130,8 +132,9 @@ app.post('/api/auth/login', limitadorLogin, async (req, res) => {
     }
 
     const csrfToken = createCsrfToken();
+    const sessionToken = createSessionToken(usuario.id);
     res.setHeader('Set-Cookie', [
-      `${SESSION_COOKIE}=${createSessionToken(usuario.id)}; ${cookieOptions(true)}`,
+      `${SESSION_COOKIE}=${sessionToken}; ${cookieOptions(true)}`,
       `${CSRF_COOKIE}=${csrfToken}; ${cookieOptions(false)}`
     ]);
 
@@ -142,7 +145,7 @@ app.post('/api/auth/login', limitadorLogin, async (req, res) => {
         correo: usuario.correo
       },
       csrfToken,
-      sessionToken: createSessionToken(usuario.id)
+      sessionToken
     });
   } catch (error) {
     console.error('Error al iniciar sesión:', error.message);
@@ -261,6 +264,8 @@ app.get('/api/movimientos', async (req, res) => {
 
 app.get('/api/categorias', async (req, res) => {
   try {
+    await asegurarCategoriasIniciales(pool, req.user.id);
+
     const [categorias] = await pool.query(`
       SELECT
         id,
@@ -546,6 +551,13 @@ app.delete('/api/movimientos/:id', async (req, res) => {
 
 
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Servidor ejecutándose en el puerto ${PORT}`);
+
+  try {
+    await pool.query('SELECT 1');
+    console.log('Conexión con la base de datos establecida');
+  } catch (error) {
+    console.error('No se pudo conectar con la base de datos:', error.code || error.message);
+  }
 });

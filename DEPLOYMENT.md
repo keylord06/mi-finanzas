@@ -31,6 +31,31 @@ SELECT COALESCE(SUM(monto), 0) AS total_movimientos FROM movimientos;
 
 5. Guardar un respaldo antes de cada migración. Para recuperar datos, crear una base nueva e importar allí el `.sql`; no sobrescribir la base activa sin verificar primero las cantidades.
 
+### Índices de rendimiento
+
+Si la base ya estaba creada antes de la última versión del esquema, ejecutar una sola vez:
+
+```sql
+ALTER TABLE categorias
+	ADD INDEX idx_categorias_usuario_activa_nombre (usuario_id, activa, nombre);
+```
+
+Verificar que las consultas principales usan los índices:
+
+```sql
+EXPLAIN SELECT id, nombre, tipo, color, icono
+FROM categorias
+WHERE usuario_id = 1 AND activa = TRUE
+ORDER BY nombre ASC;
+
+EXPLAIN SELECT id, usuario_id, categoria_id, tipo, descripcion, monto, fecha_movimiento
+FROM movimientos
+WHERE usuario_id = 1
+ORDER BY fecha_movimiento DESC;
+```
+
+En ambas consultas, `key` debe mostrar un índice de usuario; para movimientos debe ser `idx_movimientos_usuario_fecha`.
+
 ## Backend en Render
 
 El archivo `render.yaml` deja configurado el servicio. En el panel del servicio se deben completar estos secretos y valores del proveedor:

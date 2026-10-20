@@ -28,6 +28,10 @@ const pool = mysql.createPool({
   ssl: obtenerSsl(),
   waitForConnections: true,
   connectionLimit: 10,
+  maxIdle: 10,
+  idleTimeout: 60000,
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 0,
   queueLimit: 0
 });
 

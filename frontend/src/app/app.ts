@@ -8,9 +8,18 @@ import { Categorias, Categoria, DatosCategoria } from './services/categorias';
 import { Auth } from './services/auth';
 import { AfterViewInit, ElementRef, ViewChild } from '@angular/core';
 import { Chart, registerables } from 'chart.js';
-import { finalize, retry } from 'rxjs';
+import { MonoTypeOperatorFunction, finalize, retry, throwError, timer } from 'rxjs';
 
 Chart.register(...registerables);
+
+// Reintenta solo errores de red o del servidor; un 401/400 no se arregla reintentando.
+function reintentoTransitorio<T>(): MonoTypeOperatorFunction<T> {
+  return retry({
+    count: 2,
+    delay: (error: HttpErrorResponse) =>
+      error.status === 0 || error.status >= 500 ? timer(1000) : throwError(() => error)
+  });
+}
 
 interface Movimiento {
   id: number;
@@ -190,7 +199,7 @@ private actualizarGrafico(): void {
 
   private cargarMovimientos(): void {
     this.servicioMovimientos.obtenerMovimientos()
-      .pipe(retry({ count: 2, delay: 1000 }))
+      .pipe(reintentoTransitorio())
       .subscribe({
       next: (datos: MovimientoAPI[]) => {
         const lista: Movimiento[] = datos.map(movimiento => {
@@ -208,8 +217,6 @@ private actualizarGrafico(): void {
         }).sort((a, b) => b.fechaOrden - a.fechaOrden);
 
         this.movimientos.set(lista);
-
-        this.actualizarGrafico();
       },
       error: (error: HttpErrorResponse) => {
         this.errorCarga.set(
@@ -419,7 +426,12 @@ protected iniciarSesion(): void {
 
 protected cerrarSesion(): void {
   this.auth.cerrarSesion().subscribe({
-    next: () => this.autenticado.set(false),
+    next: () => {
+      this.autenticado.set(false);
+      this.movimientos.set([]);
+      this.categorias.set([]);
+      this.errorCarga.set('');
+    },
     error: () => this.errorSesion.set('No se pudo cerrar la sesión.')
   });
 }
@@ -565,7 +577,7 @@ private cargarCategorias(): void {
 
   this.servicioCategorias.obtenerCategorias()
     .pipe(
-      retry({ count: 2, delay: 1000 }),
+      reintentoTransitorio(),
       finalize(() => this.cargandoCategorias.set(false))
     )
     .subscribe({

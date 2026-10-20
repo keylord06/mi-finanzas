@@ -6,6 +6,7 @@
   "scripts": {
     "crear-usuario": "node scripts/crear-usuario.js",
     "start": "node server.js",
+    "transferir-datos": "node scripts/transferir-datos.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

@@ -3,6 +3,7 @@ require('dotenv').config();
 const readline = require('readline');
 const pool = require('../db');
 const { hashPassword } = require('../auth');
+const { asegurarCategoriasIniciales } = require('../categorias-iniciales');
 
 function preguntar(pregunta) {
   const interfaz = readline.createInterface({
@@ -74,11 +75,13 @@ async function main() {
     throw new Error('Ya existe un usuario con ese correo.');
   }
 
-  await pool.execute(
+  const [resultado] = await pool.execute(
     `INSERT INTO usuarios (nombre, correo, password_hash)
      VALUES (?, ?, ?)`,
     [nombre, correo, hashPassword(password)]
   );
+
+  await asegurarCategoriasIniciales(pool, resultado.insertId);
 
   console.log('Usuario creado correctamente.');
 }
